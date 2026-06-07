@@ -482,11 +482,60 @@ button:disabled {
   font-size: 1.8rem;
 }
 
+.service-settings {
+  display: grid;
+  gap: 14px;
+  border-radius: 8px;
+  padding: 18px;
+  background: #12110f;
+}
+
+.service-settings h2 {
+  margin-top: 4px;
+  color: #fff7ec;
+  font-size: 1.15rem;
+}
+
+.service-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.service-settings-grid article {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.service-settings-grid strong {
+  color: #fff7ec;
+}
+
+.service-settings-grid span {
+  color: #f0bd6a;
+  font-weight: 850;
+}
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .agenda-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
   gap: 18px;
   align-items: start;
+}
+
+.admin-side {
+  display: grid;
+  gap: 14px;
 }
 
 .timeline {
@@ -502,6 +551,11 @@ button:disabled {
   border-radius: 8px;
   padding: 14px;
   background: #12110f;
+}
+
+.timeline-card.blocked-card {
+  border: 1px solid rgba(240, 189, 106, 0.2);
+  background: rgba(240, 189, 106, 0.08);
 }
 
 .client-avatar {
@@ -563,6 +617,11 @@ button:disabled {
   background: rgba(183, 58, 43, 0.2);
 }
 
+.status.bloqueado {
+  color: #f0bd6a;
+  background: rgba(240, 189, 106, 0.14);
+}
+
 .timeline-actions {
   display: flex;
   gap: 8px;
@@ -579,8 +638,7 @@ button:disabled {
 }
 
 .timeline-actions .delete-button {
-  width: 38px;
-  padding: 0;
+  padding: 0 10px;
   color: #ffb4aa;
   border-color: rgba(183, 58, 43, 0.32);
   background: rgba(183, 58, 43, 0.12);
@@ -606,12 +664,36 @@ button:disabled {
   gap: 14px;
 }
 
+.history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.history-list article {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.history-list strong {
+  color: #fff7ec;
+}
+
+.history-list span,
+.history-list small,
+.history-list p {
+  color: #b9ad9d;
+}
+
 @media (max-width: 980px) {
   .service-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .step-section.split,
+  .inline-fields,
   .agenda-layout {
     grid-template-columns: 1fr;
   }

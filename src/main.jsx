@@ -2,30 +2,62 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const STORAGE_KEY = 'barber_agenda_appointments';
+const APPOINTMENTS_KEY = 'barber_agenda_appointments';
+const SERVICES_KEY = 'barber_agenda_services';
+const SERVICES_VERSION_KEY = 'barber_agenda_services_version';
+const CURRENT_SERVICES_VERSION = '2';
 const BUSINESS_NAME = 'Samuka Barbearia';
-const APPOINTMENT_DURATION_MINUTES = 40;
+const SLOT_STEP_MINUTES = 40;
 const today = toDateInputValue(new Date());
 
-const SERVICES = [
-  { id: 'corte', name: 'Corte Masculino', price: 'R$ 35', duration: '40 min' },
-  { id: 'barba', name: 'Barba na Navalha', price: 'R$ 30', duration: '40 min' },
-  { id: 'combo', name: 'Corte + Barba', price: 'R$ 60', duration: '80 min' },
-  { id: 'combo-completo', name: 'Corte + Barba + Sobrancelha', price: 'R$ 70', duration: '100 min' },
-  { id: 'sobrancelha', name: 'Sobrancelha', price: 'R$ 15', duration: '20 min' },
+const DEFAULT_SERVICES = [
+  { id: 'corte', name: 'Corte Masculino', price: 'R$ 35', durationMinutes: 40, bufferMinutes: 10 },
+  { id: 'barba', name: 'Barba na Navalha', price: 'R$ 30', durationMinutes: 20, bufferMinutes: 10 },
+  { id: 'combo', name: 'Corte + Barba', price: 'R$ 60', durationMinutes: 80, bufferMinutes: 10 },
+  { id: 'combo-completo', name: 'Corte + Barba + Sobrancelha', price: 'R$ 70', durationMinutes: 100, bufferMinutes: 10 },
+  { id: 'sobrancelha', name: 'Sobrancelha', price: 'R$ 15', durationMinutes: 20, bufferMinutes: 10 },
 ];
+
 const BARBERS = ['Barbeiro A', 'Barbeiro B'];
 
 function loadAppointments() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? [];
+    return JSON.parse(localStorage.getItem(APPOINTMENTS_KEY)) ?? [];
   } catch {
     return [];
   }
 }
 
+function loadServices() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SERVICES_KEY));
+    if (!Array.isArray(stored) || !stored.length) return DEFAULT_SERVICES;
+    const version = localStorage.getItem(SERVICES_VERSION_KEY);
+    const merged = DEFAULT_SERVICES.map((service) => ({ ...service, ...stored.find((item) => item.id === service.id) }));
+    const migrated = merged.map((service) =>
+      version !== CURRENT_SERVICES_VERSION && service.id === 'barba' && service.durationMinutes === 40
+        ? { ...service, durationMinutes: 20 }
+        : service,
+    );
+
+    if (version !== CURRENT_SERVICES_VERSION) {
+      localStorage.setItem(SERVICES_KEY, JSON.stringify(migrated));
+      localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
+    }
+
+    return migrated;
+  } catch {
+    return DEFAULT_SERVICES;
+  }
+}
+
 function saveAppointments(appointments) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(appointments));
+  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments));
+}
+
+function saveServices(services) {
+  localStorage.setItem(SERVICES_KEY, JSON.stringify(services));
+  localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
 }
 
 function App() {
@@ -34,6 +66,7 @@ function App() {
     () => localStorage.getItem('barber_admin_session') === 'active',
   );
   const [appointments, setAppointments] = useState(loadAppointments);
+  const [services, setServices] = useState(loadServices);
 
   useEffect(() => {
     if (window.location.pathname === '/') {
@@ -51,29 +84,29 @@ function App() {
   }, [appointments]);
 
   useEffect(() => {
-    const reloadAppointments = () => {
+    saveServices(services);
+  }, [services]);
+
+  useEffect(() => {
+    const reloadLocalData = () => {
       setAppointments(loadAppointments());
+      setServices(loadServices());
     };
 
     const handleStorageChange = (event) => {
-      if (event.key === STORAGE_KEY) {
-        reloadAppointments();
+      if (event.key === APPOINTMENTS_KEY || event.key === SERVICES_KEY) {
+        reloadLocalData();
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('focus', reloadAppointments);
+    window.addEventListener('focus', reloadLocalData);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('focus', reloadAppointments);
+      window.removeEventListener('focus', reloadLocalData);
     };
   }, []);
-
-  const navigate = (nextPath) => {
-    window.history.pushState({}, '', nextPath);
-    setPath(nextPath);
-  };
 
   const loginAdmin = (username, password) => {
     if (username === 'admin' && password === '1234') {
@@ -91,29 +124,16 @@ function App() {
   };
 
   const createAppointment = (payload) => {
-    const times = getBusinessTimes(payload.date);
+    const normalized = normalizeScheduleItem(payload, services);
+    const validation = validateScheduleItem(normalized, appointments, services);
 
-    if (!times.length || !times.includes(payload.time)) {
-      return { ok: false, message: 'A barbearia nao atende nesse dia ou horario.' };
-    }
-
-    const hasConflict = appointments.some(
-      (appointment) =>
-        appointment.date === payload.date &&
-        appointment.time === payload.time &&
-        appointment.barber === payload.barber &&
-        appointment.status !== 'cancelado',
-    );
-
-    if (hasConflict) {
-      return { ok: false, message: 'Esse barbeiro ja possui agendamento nesse horario.' };
-    }
+    if (!validation.ok) return validation;
 
     const appointment = {
       id: crypto.randomUUID(),
-      status: 'agendado',
+      status: normalized.type === 'block' ? 'bloqueado' : 'agendado',
       createdAt: new Date().toISOString(),
-      ...payload,
+      ...normalized,
     };
 
     setAppointments((current) => [...current, appointment]);
@@ -132,6 +152,19 @@ function App() {
     setAppointments((current) => current.filter((appointment) => appointment.id !== id));
   };
 
+  const updateService = (serviceId, patch) => {
+    setServices((current) =>
+      current.map((service) =>
+        service.id === serviceId
+          ? {
+              ...service,
+              ...patch,
+            }
+          : service,
+      ),
+    );
+  };
+
   if (path === '/admin') {
     return (
       <main className="app-shell">
@@ -140,12 +173,14 @@ function App() {
         />
 
         {isAdminLoggedIn ? (
-        <BarberDashboard
-          appointments={appointments}
-          onCreate={createAppointment}
-          onDelete={deleteAppointment}
-          onStatusChange={updateStatus}
-        />
+          <BarberDashboard
+            appointments={appointments}
+            onCreate={createAppointment}
+            onDelete={deleteAppointment}
+            onServiceChange={updateService}
+            onStatusChange={updateStatus}
+            services={services}
+          />
         ) : (
           <AdminLogin onLogin={loginAdmin} />
         )}
@@ -156,7 +191,7 @@ function App() {
   return (
     <main className="app-shell">
       <AppHeader />
-      <BookingPage appointments={appointments} onCreate={createAppointment} />
+      <BookingPage appointments={appointments} onCreate={createAppointment} services={services} />
     </main>
   );
 }
@@ -228,10 +263,10 @@ function AdminLogin({ onLogin }) {
   );
 }
 
-function BookingPage({ appointments, onCreate }) {
+function BookingPage({ appointments, onCreate, services }) {
   const now = useNowMinute();
   const [form, setForm] = useState({
-    service: SERVICES[0].name,
+    serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id,
     barber: BARBERS[0],
     date: today,
     time: '',
@@ -241,12 +276,13 @@ function BookingPage({ appointments, onCreate }) {
   const [confirmation, setConfirmation] = useState('');
   const appointmentConfirmed = Boolean(confirmation);
 
-  const selectedService = SERVICES.find((service) => service.name === form.service) ?? SERVICES[0];
+  const selectedService = services.find((service) => service.id === form.serviceId) ?? services[0];
+  const blockMinutes = getServiceBlockMinutes(selectedService);
   const timeUntilAppointment = getTimeUntilAppointment(form.date, form.time, now);
   const selectedTimePassed = isAppointmentInPast(form.date, form.time, now);
   const availableTimes = useMemo(
-    () => getAvailableTimes(appointments, form.date, form.barber),
-    [appointments, form.date, form.barber],
+    () => getAvailableTimes(appointments, form.date, form.barber, blockMinutes, { includePast: false, services }),
+    [appointments, blockMinutes, form.date, form.barber],
   );
 
   useEffect(() => {
@@ -254,6 +290,12 @@ function BookingPage({ appointments, onCreate }) {
       setForm((current) => ({ ...current, time: availableTimes[0] ?? '' }));
     }
   }, [availableTimes, form.time]);
+
+  useEffect(() => {
+    if (!services.some((service) => service.id === form.serviceId)) {
+      setForm((current) => ({ ...current, serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id }));
+    }
+  }, [form.serviceId, services]);
 
   const updateField = (field, value) => {
     setError('');
@@ -263,9 +305,7 @@ function BookingPage({ appointments, onCreate }) {
   const submitAppointment = (event) => {
     event.preventDefault();
 
-    if (appointmentConfirmed) {
-      return;
-    }
+    if (appointmentConfirmed) return;
 
     if (!form.customerName.trim() || !form.time) {
       setError('Informe seu nome e escolha um horario.');
@@ -279,10 +319,14 @@ function BookingPage({ appointments, onCreate }) {
 
     const result = onCreate({
       customerName: form.customerName.trim(),
-      service: form.service,
+      serviceId: selectedService.id,
+      service: selectedService.name,
       barber: form.barber,
       date: form.date,
       time: form.time,
+      durationMinutes: selectedService.durationMinutes,
+      bufferMinutes: selectedService.bufferMinutes,
+      type: 'appointment',
     });
 
     if (!result.ok) {
@@ -310,7 +354,7 @@ function BookingPage({ appointments, onCreate }) {
           <p>{getBusinessLabel(form.date)}</p>
         </div>
         <div className="quick-summary">
-          <span>{selectedService.duration}</span>
+          <span>{blockMinutes} min reservados</span>
           <strong>{selectedService.price}</strong>
         </div>
       </div>
@@ -319,15 +363,15 @@ function BookingPage({ appointments, onCreate }) {
         <section className="step-section">
           <h2>Servico</h2>
           <div className="service-options">
-            {SERVICES.map((service) => (
+            {services.map((service) => (
               <button
-                className={form.service === service.name ? 'service-option selected' : 'service-option'}
+                className={form.serviceId === service.id ? 'service-option selected' : 'service-option'}
                 key={service.id}
-                onClick={() => updateField('service', service.name)}
+                onClick={() => updateField('serviceId', service.id)}
                 type="button"
               >
                 <strong>{service.name}</strong>
-                <span>{service.price} • {service.duration}</span>
+                <span>{service.price} - {service.durationMinutes} min + {service.bufferMinutes} min</span>
               </button>
             ))}
           </div>
@@ -395,7 +439,7 @@ function BookingPage({ appointments, onCreate }) {
           <dl>
             <div>
               <dt>Servico</dt>
-              <dd>{form.service}</dd>
+              <dd>{selectedService.name}</dd>
             </div>
             <div>
               <dt>Barbeiro</dt>
@@ -408,6 +452,10 @@ function BookingPage({ appointments, onCreate }) {
             <div>
               <dt>Horario</dt>
               <dd>{form.time || 'Selecione'}</dd>
+            </div>
+            <div>
+              <dt>Reserva</dt>
+              <dd>{blockMinutes} min</dd>
             </div>
           </dl>
           {form.time && <p className="time-until">{timeUntilAppointment}</p>}
@@ -432,18 +480,28 @@ function BookingPage({ appointments, onCreate }) {
   );
 }
 
-function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
+function BarberDashboard({ appointments, onCreate, onDelete, onServiceChange, onStatusChange, services }) {
   const now = useNowMinute();
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedBarber, setSelectedBarber] = useState(BARBERS[0]);
   const [manual, setManual] = useState({
     customerName: '',
-    service: SERVICES[0].name,
+    serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id,
     barber: BARBERS[0],
     time: '',
+    durationMinutes: services[0]?.durationMinutes ?? 40,
+    bufferMinutes: services[0]?.bufferMinutes ?? 10,
+  });
+  const [block, setBlock] = useState({
+    time: '',
+    durationMinutes: 40,
+    reason: 'Bloqueio manual',
   });
   const [manualError, setManualError] = useState('');
+  const [blockError, setBlockError] = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
 
+  const manualBlockMinutes = Number(manual.durationMinutes) + Number(manual.bufferMinutes);
   const dayAppointments = useMemo(
     () =>
       appointments
@@ -457,17 +515,44 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
   );
 
   const availableTimes = useMemo(
-    () => getAvailableTimes(appointments, selectedDate, selectedBarber),
-    [appointments, selectedDate, selectedBarber],
+    () => getAvailableTimes(appointments, selectedDate, selectedBarber, manualBlockMinutes, { includePast: true, services }),
+    [appointments, manualBlockMinutes, selectedDate, selectedBarber],
+  );
+
+  const availableBlockTimes = useMemo(
+    () => getAvailableTimes(appointments, selectedDate, selectedBarber, Number(block.durationMinutes), { includePast: true, services }),
+    [appointments, block.durationMinutes, selectedDate, selectedBarber],
   );
 
   const completedCount = dayAppointments.filter(
     (appointment) => appointment.status === 'concluido',
   ).length;
 
+  const historyItems = useMemo(() => {
+    const query = historyQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    return appointments
+      .filter((appointment) => appointment.type !== 'block')
+      .filter((appointment) => appointment.customerName?.toLowerCase().includes(query))
+      .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+      .slice(0, 8);
+  }, [appointments, historyQuery]);
+
   useEffect(() => {
     setManual((current) => ({ ...current, barber: selectedBarber }));
   }, [selectedBarber]);
+
+  useEffect(() => {
+    const service = services.find((item) => item.id === manual.serviceId) ?? services[0];
+    if (!service) return;
+
+    setManual((current) => ({
+      ...current,
+      durationMinutes: service.durationMinutes,
+      bufferMinutes: service.bufferMinutes,
+    }));
+  }, [manual.serviceId, services]);
 
   useEffect(() => {
     if (!availableTimes.includes(manual.time)) {
@@ -475,9 +560,17 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
     }
   }, [availableTimes, manual.time]);
 
+  useEffect(() => {
+    if (!availableBlockTimes.includes(block.time)) {
+      setBlock((current) => ({ ...current, time: availableBlockTimes[0] ?? '' }));
+    }
+  }, [availableBlockTimes, block.time]);
+
   const addManualAppointment = (event) => {
     event.preventDefault();
     setManualError('');
+
+    const service = services.find((item) => item.id === manual.serviceId) ?? services[0];
 
     if (!manual.customerName.trim() || !manual.time) {
       setManualError('Informe nome e um horario livre.');
@@ -486,10 +579,14 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
 
     const result = onCreate({
       customerName: manual.customerName.trim(),
-      service: manual.service,
+      serviceId: service.id,
+      service: service.name,
       barber: manual.barber,
       date: selectedDate,
       time: manual.time,
+      durationMinutes: Number(manual.durationMinutes),
+      bufferMinutes: Number(manual.bufferMinutes),
+      type: 'appointment',
     });
 
     if (!result.ok) {
@@ -497,12 +594,36 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
       return;
     }
 
-    setManual({
-      customerName: '',
-      service: SERVICES[0].name,
+    setManual((current) => ({ ...current, customerName: '', time: '' }));
+  };
+
+  const addManualBlock = (event) => {
+    event.preventDefault();
+    setBlockError('');
+
+    if (!block.time || Number(block.durationMinutes) <= 0) {
+      setBlockError('Informe um horario e uma duracao valida.');
+      return;
+    }
+
+    const result = onCreate({
+      customerName: block.reason.trim() || 'Bloqueio manual',
+      serviceId: 'block',
+      service: block.reason.trim() || 'Bloqueio manual',
       barber: selectedBarber,
-      time: '',
+      date: selectedDate,
+      time: block.time,
+      durationMinutes: Number(block.durationMinutes),
+      bufferMinutes: 0,
+      type: 'block',
     });
+
+    if (!result.ok) {
+      setBlockError(result.message);
+      return;
+    }
+
+    setBlock((current) => ({ ...current, time: '', reason: 'Bloqueio manual' }));
   };
 
   return (
@@ -511,7 +632,7 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
         <div>
           <span className="eyebrow">Agenda do barbeiro</span>
           <h1>{formatDate(selectedDate)}</h1>
-          <p>{dayAppointments.length} agendamentos • {availableTimes.length} horarios livres</p>
+          <p>{selectedBarber} - {dayAppointments.length} itens na agenda</p>
         </div>
         <label>
           Data
@@ -530,7 +651,7 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
       <div className="admin-stats">
         <article>
           <span>Agendamentos do dia</span>
-          <strong>{dayAppointments.length}</strong>
+          <strong>{dayAppointments.filter((item) => item.type !== 'block').length}</strong>
         </article>
         <article>
           <span>Horarios livres</span>
@@ -542,35 +663,43 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
         </article>
       </div>
 
+      <ServiceSettings services={services} onServiceChange={onServiceChange} />
+
       <div className="agenda-layout">
         <div className="timeline">
           {dayAppointments.length ? (
             dayAppointments.map((appointment) => (
-              <article className="timeline-card" key={appointment.id}>
+              <article className={appointment.type === 'block' ? 'timeline-card blocked-card' : 'timeline-card'} key={appointment.id}>
                 <div className="client-avatar">
-                  <span>{appointment.customerName[0]}</span>
+                  <span>{appointment.type === 'block' ? 'B' : appointment.customerName[0]}</span>
                 </div>
                 <div className="timeline-info">
-                  <span className="time-label">{appointment.time}</span>
+                  <span className="time-label">
+                    {appointment.time} - {minutesToTime(timeToMinutes(appointment.time) + getAppointmentBlockMinutes(appointment, services))}
+                  </span>
                   <h3>{appointment.customerName}</h3>
-                  <p>{appointment.service} • {appointment.barber ?? 'Barbeiro A'}</p>
-                  <small>{getTimeUntilAppointment(appointment.date, appointment.time, now)}</small>
+                  <p>{appointment.service} - {appointment.barber ?? BARBERS[0]}</p>
+                  <small>{appointment.type === 'block' ? `${appointment.durationMinutes} min bloqueados` : getTimeUntilAppointment(appointment.date, appointment.time, now)}</small>
                 </div>
                 <span className={`status ${appointment.status}`}>{statusLabel(appointment.status)}</span>
                 <div className="timeline-actions">
-                  <button onClick={() => onStatusChange(appointment.id, 'concluido')} type="button">
-                    Concluir
-                  </button>
-                  <button onClick={() => onStatusChange(appointment.id, 'cancelado')} type="button">
-                    Cancelar
-                  </button>
+                  {appointment.type !== 'block' && (
+                    <>
+                      <button onClick={() => onStatusChange(appointment.id, 'concluido')} type="button">
+                        Concluir
+                      </button>
+                      <button onClick={() => onStatusChange(appointment.id, 'cancelado')} type="button">
+                        Cancelar
+                      </button>
+                    </>
+                  )}
                   <button
                     className="delete-button"
                     onClick={() => onDelete(appointment.id)}
                     title="Excluir agendamento"
                     type="button"
                   >
-                    🗑
+                    Excluir
                   </button>
                 </div>
               </article>
@@ -583,83 +712,283 @@ function BarberDashboard({ appointments, onCreate, onDelete, onStatusChange }) {
           )}
         </div>
 
-        <form className="manual-booking" onSubmit={addManualAppointment}>
-          <h2>Adicionar horario</h2>
+        <div className="admin-side">
+          <form className="manual-booking" onSubmit={addManualAppointment}>
+            <h2>Adicionar horario</h2>
 
-          <label>
-            Cliente
+            <label>
+              Cliente
+              <input
+                value={manual.customerName}
+                onChange={(event) => setManual((current) => ({ ...current, customerName: event.target.value }))}
+                placeholder="Nome do cliente"
+              />
+            </label>
+
+            <label>
+              Servico
+              <select
+                value={manual.serviceId}
+                onChange={(event) => setManual((current) => ({ ...current, serviceId: event.target.value }))}
+              >
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>{service.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Barbeiro
+              <select
+                value={manual.barber}
+                onChange={(event) => {
+                  setSelectedBarber(event.target.value);
+                  setManual((current) => ({ ...current, barber: event.target.value }));
+                }}
+              >
+                {BARBERS.map((barber) => (
+                  <option key={barber}>{barber}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="inline-fields">
+              <label>
+                Duracao
+                <input
+                  min="1"
+                  type="number"
+                  value={manual.durationMinutes}
+                  onChange={(event) => setManual((current) => ({ ...current, durationMinutes: event.target.value }))}
+                />
+              </label>
+              <label>
+                Margem
+                <input
+                  min="0"
+                  type="number"
+                  value={manual.bufferMinutes}
+                  onChange={(event) => setManual((current) => ({ ...current, bufferMinutes: event.target.value }))}
+                />
+              </label>
+            </div>
+
+            <label>
+              Horario
+              <select
+                value={manual.time}
+                onChange={(event) => setManual((current) => ({ ...current, time: event.target.value }))}
+              >
+                {availableTimes.length ? (
+                  availableTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
+                ) : (
+                  <option value="">Sem horarios</option>
+                )}
+              </select>
+            </label>
+
+            <button className="secondary-button" disabled={!availableTimes.length} type="submit">
+              Adicionar manualmente
+            </button>
+
+            {manualError && <p className="feedback error">{manualError}</p>}
+          </form>
+
+          <form className="manual-booking" onSubmit={addManualBlock}>
+            <h2>Bloquear horario</h2>
+
+            <label>
+              Motivo
+              <input
+                value={block.reason}
+                onChange={(event) => setBlock((current) => ({ ...current, reason: event.target.value }))}
+                placeholder="Almoco, manutencao..."
+              />
+            </label>
+
+            <div className="inline-fields">
+              <label>
+                Horario
+                <select
+                  value={block.time}
+                  onChange={(event) => setBlock((current) => ({ ...current, time: event.target.value }))}
+                >
+                  {availableBlockTimes.length ? (
+                    availableBlockTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
+                  ) : (
+                    <option value="">Sem horarios</option>
+                  )}
+                </select>
+              </label>
+              <label>
+                Minutos
+                <input
+                  min="1"
+                  type="number"
+                  value={block.durationMinutes}
+                  onChange={(event) => setBlock((current) => ({ ...current, durationMinutes: event.target.value }))}
+                />
+              </label>
+            </div>
+
+            <button className="secondary-button" disabled={!availableBlockTimes.length} type="submit">
+              Bloquear
+            </button>
+
+            {blockError && <p className="feedback error">{blockError}</p>}
+          </form>
+
+          <section className="manual-booking">
+            <h2>Historico por cliente</h2>
             <input
-              value={manual.customerName}
-              onChange={(event) => setManual((current) => ({ ...current, customerName: event.target.value }))}
-              placeholder="Nome do cliente"
+              value={historyQuery}
+              onChange={(event) => setHistoryQuery(event.target.value)}
+              placeholder="Buscar cliente"
             />
-          </label>
-
-          <label>
-            Servico
-            <select
-              value={manual.service}
-              onChange={(event) => setManual((current) => ({ ...current, service: event.target.value }))}
-            >
-              {SERVICES.map((service) => (
-                <option key={service.id}>{service.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Barbeiro
-            <select
-              value={manual.barber}
-              onChange={(event) => {
-                setSelectedBarber(event.target.value);
-                setManual((current) => ({ ...current, barber: event.target.value }));
-              }}
-            >
-              {BARBERS.map((barber) => (
-                <option key={barber}>{barber}</option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Horario
-            <select
-              value={manual.time}
-              onChange={(event) => setManual((current) => ({ ...current, time: event.target.value }))}
-            >
-              {availableTimes.length ? (
-                availableTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
+            <div className="history-list">
+              {historyItems.length ? (
+                historyItems.map((item) => (
+                  <article key={item.id}>
+                    <strong>{item.customerName}</strong>
+                    <span>{formatDate(item.date)} - {item.time} - {item.service}</span>
+                    <small>{statusLabel(item.status)}</small>
+                  </article>
+                ))
               ) : (
-                <option value="">Sem horarios</option>
+                <p>Digite um nome para ver o historico.</p>
               )}
-            </select>
-          </label>
-
-          <button className="secondary-button" disabled={!availableTimes.length} type="submit">
-            Adicionar manualmente
-          </button>
-
-          {manualError && <p className="feedback error">{manualError}</p>}
-        </form>
+            </div>
+          </section>
+        </div>
       </div>
     </section>
   );
 }
 
-function getAvailableTimes(appointments, date, barber = BARBERS[0]) {
-  const occupied = new Set(
-    appointments
-      .filter(
-        (appointment) =>
-          appointment.date === date &&
-          (appointment.barber ?? BARBERS[0]) === barber &&
-          appointment.status !== 'cancelado',
-      )
-      .map((appointment) => appointment.time),
+function ServiceSettings({ services, onServiceChange }) {
+  return (
+    <section className="service-settings">
+      <div>
+        <span className="eyebrow">Servicos</span>
+        <h2>Duracao e margem</h2>
+      </div>
+      <div className="service-settings-grid">
+        {services.map((service) => (
+          <article key={service.id}>
+            <strong>{service.name}</strong>
+            <span>{service.price}</span>
+            <div className="inline-fields">
+              <label>
+                Duracao
+                <input
+                  min="1"
+                  type="number"
+                  value={service.durationMinutes}
+                  onChange={(event) => onServiceChange(service.id, { durationMinutes: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Margem
+                <input
+                  min="0"
+                  type="number"
+                  value={service.bufferMinutes}
+                  onChange={(event) => onServiceChange(service.id, { bufferMinutes: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
+}
 
-  return getBusinessTimes(date).filter((time) => !occupied.has(time));
+function getAvailableTimes(appointments, date, barber = BARBERS[0], durationMinutes = SLOT_STEP_MINUTES, options = {}) {
+  return getBusinessTimes(date).filter((time) => {
+    if (!options.includePast && isAppointmentInPast(date, time)) return false;
+    if (timeToMinutes(time) + Number(durationMinutes) > getBusinessCloseMinutes(date)) return false;
+    return !hasScheduleConflict(
+      appointments,
+      {
+        date,
+        time,
+        barber,
+        durationMinutes,
+        bufferMinutes: 0,
+      },
+      options.services ?? DEFAULT_SERVICES,
+    );
+  });
+}
+
+function validateScheduleItem(item, appointments, services) {
+  const businessTimes = getBusinessTimes(item.date);
+  if (!businessTimes.length || !businessTimes.includes(item.time)) {
+    return { ok: false, message: 'A barbearia nao atende nesse dia ou horario.' };
+  }
+
+  const start = timeToMinutes(item.time);
+  const end = start + getAppointmentBlockMinutes(item, services);
+  const businessEnd = getBusinessCloseMinutes(item.date);
+
+  if (end > businessEnd) {
+    return { ok: false, message: 'Esse horario nao comporta a duracao do atendimento.' };
+  }
+
+  if (hasScheduleConflict(appointments, item, services)) {
+    return { ok: false, message: 'Esse horario conflita com outro item da agenda.' };
+  }
+
+  return { ok: true };
+}
+
+function hasScheduleConflict(appointments, candidate, services) {
+  const candidateStart = timeToMinutes(candidate.time);
+  const candidateEnd = candidateStart + getAppointmentBlockMinutes(candidate, services);
+
+  return appointments.some((appointment) => {
+    if (appointment.date !== candidate.date) return false;
+    if ((appointment.barber ?? BARBERS[0]) !== candidate.barber) return false;
+    if (appointment.status === 'cancelado') return false;
+    if (candidate.id && appointment.id === candidate.id) return false;
+
+    const appointmentStart = timeToMinutes(appointment.time);
+    const appointmentEnd = appointmentStart + getAppointmentBlockMinutes(appointment, services);
+    return candidateStart < appointmentEnd && candidateEnd > appointmentStart;
+  });
+}
+
+function normalizeScheduleItem(payload, services) {
+  const service = services.find((item) => item.id === payload.serviceId || item.name === payload.service);
+  const durationMinutes = Number(payload.durationMinutes ?? service?.durationMinutes ?? SLOT_STEP_MINUTES);
+  const bufferMinutes = Number(payload.bufferMinutes ?? service?.bufferMinutes ?? 0);
+
+  return {
+    type: payload.type ?? 'appointment',
+    customerName: payload.customerName,
+    serviceId: payload.serviceId ?? service?.id ?? 'custom',
+    service: payload.service ?? service?.name ?? 'Atendimento',
+    barber: payload.barber ?? BARBERS[0],
+    date: payload.date,
+    time: payload.time,
+    durationMinutes,
+    bufferMinutes,
+  };
+}
+
+function getServiceBlockMinutes(service) {
+  return Number(service?.durationMinutes ?? SLOT_STEP_MINUTES) + Number(service?.bufferMinutes ?? 0);
+}
+
+function getAppointmentBlockMinutes(appointment, services) {
+  if (appointment.type === 'block') return Number(appointment.durationMinutes ?? SLOT_STEP_MINUTES);
+  if (appointment.durationMinutes != null) {
+    return Number(appointment.durationMinutes) + Number(appointment.bufferMinutes ?? 0);
+  }
+
+  const service = services.find((item) => item.id === appointment.serviceId || item.name === appointment.service);
+  return getServiceBlockMinutes(service);
 }
 
 function useNowMinute() {
@@ -682,13 +1011,8 @@ function getTimeUntilAppointment(date, time, now = new Date()) {
   const appointmentDate = new Date(`${date}T${time}:00`);
   const differenceInMinutes = Math.floor((appointmentDate.getTime() - now.getTime()) / 60000);
 
-  if (differenceInMinutes < 0) {
-    return 'Esse horario ja passou.';
-  }
-
-  if (differenceInMinutes === 0) {
-    return 'Seu horario e agora.';
-  }
+  if (differenceInMinutes < 0) return 'Esse horario ja passou.';
+  if (differenceInMinutes === 0) return 'Seu horario e agora.';
 
   const days = Math.floor(differenceInMinutes / 1440);
   const hours = Math.floor((differenceInMinutes % 1440) / 60);
@@ -710,9 +1034,7 @@ function getTimeUntilAppointment(date, time, now = new Date()) {
 
 function isAppointmentInPast(date, time, now = new Date()) {
   if (!date || !time) return false;
-
-  const appointmentDate = new Date(`${date}T${time}:00`);
-  return appointmentDate.getTime() < now.getTime();
+  return new Date(`${date}T${time}:00`).getTime() < now.getTime();
 }
 
 function getBusinessTimes(date) {
@@ -723,16 +1045,18 @@ function getBusinessTimes(date) {
   return buildTimes(7, 30, 19, 0);
 }
 
+function getBusinessCloseMinutes(date) {
+  const weekday = new Date(`${date}T12:00:00`).getDay();
+  if (weekday === 6) return 18 * 60;
+  return 19 * 60;
+}
+
 function buildTimes(startHour, startMinute, endHour, endMinute) {
   const times = [];
   const opening = startHour * 60 + startMinute;
   const closing = endHour * 60 + endMinute;
 
-  for (
-    let minutes = opening;
-    minutes + APPOINTMENT_DURATION_MINUTES <= closing;
-    minutes += APPOINTMENT_DURATION_MINUTES
-  ) {
+  for (let minutes = opening; minutes + SLOT_STEP_MINUTES <= closing; minutes += SLOT_STEP_MINUTES) {
     times.push(formatMinutes(minutes));
   }
 
@@ -767,9 +1091,19 @@ function formatMinutes(totalMinutes) {
   return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+function timeToMinutes(time) {
+  const [hour, minute] = time.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function minutesToTime(totalMinutes) {
+  return formatMinutes(totalMinutes);
+}
+
 function statusLabel(status) {
   const labels = {
     agendado: 'Agendado',
+    bloqueado: 'Bloqueado',
     concluido: 'Concluido',
     cancelado: 'Cancelado',
   };
