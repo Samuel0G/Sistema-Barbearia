@@ -296,6 +296,8 @@ label {
 input,
 select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -303,6 +305,14 @@ select {
   color: #fbf7ed;
   background: #0b0b0a;
   outline: none;
+}
+
+input[type="date"] {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 input:focus,
@@ -946,8 +956,15 @@ button:disabled {
     gap: 6px;
   }
 
+  .step-section.split > div {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
   input,
   select {
     min-height: 46px;
+    font-size: 16px;
   }
 }
