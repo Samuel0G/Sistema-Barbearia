@@ -11,6 +11,15 @@
   box-sizing: border-box;
 }
 
+main,
+section,
+article,
+div,
+form,
+label {
+  min-width: 0;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -28,6 +37,7 @@ select {
 
 button {
   cursor: pointer;
+  min-width: 0;
 }
 
 .app-shell {
@@ -135,6 +145,7 @@ p {
   display: grid;
   gap: 16px;
   width: min(430px, 100%);
+  max-width: 100%;
   border-radius: 8px;
   padding: 24px;
   background: #12110f;
@@ -259,6 +270,7 @@ p {
 
 .service-option strong {
   font-size: 0.98rem;
+  overflow-wrap: anywhere;
 }
 
 .service-option span {
@@ -538,6 +550,53 @@ button:disabled {
   gap: 14px;
 }
 
+.admin-drawer {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #12110f;
+}
+
+.admin-drawer summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px;
+  color: #fff7ec;
+  cursor: pointer;
+  font-weight: 900;
+  list-style: none;
+}
+
+.admin-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-drawer summary::after {
+  content: "+";
+  color: #f0bd6a;
+  font-size: 1.25rem;
+}
+
+.admin-drawer[open] summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-drawer[open] summary::after {
+  content: "-";
+}
+
+.admin-drawer .drawer-content {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.full-drawer .service-settings {
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .timeline {
   display: grid;
   gap: 10px;
@@ -577,6 +636,7 @@ button:disabled {
 
 .timeline-info h3 {
   color: #fff7ec;
+  overflow-wrap: anywhere;
 }
 
 .timeline-info p,
@@ -701,8 +761,8 @@ button:disabled {
 
 @media (max-width: 700px) {
   .app-shell {
-    width: min(100% - 20px, 1120px);
-    padding-top: 14px;
+    width: 100%;
+    padding: 12px 12px 30px;
   }
 
   .topbar,
@@ -717,11 +777,80 @@ button:disabled {
     width: 100%;
   }
 
-  .service-options,
-  .admin-stats,
+  .topbar {
+    margin-bottom: 14px;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .ghost-button {
+    width: 100%;
+  }
+
+  .login-screen {
+    min-height: calc(100vh - 82px);
+    align-items: center;
+  }
+
+  .login-card,
+  .booking-card,
+  .manual-booking {
+    padding: 16px;
+  }
+
+  .booking-header,
+  .agenda-heading {
+    min-height: auto;
+    padding: 18px;
+  }
+
+  .booking-header h1,
+  .agenda-heading h1 {
+    font-size: 2rem;
+  }
+
+  .service-options {
+    grid-template-columns: 1fr;
+  }
+
+  .service-option {
+    min-height: 68px;
+  }
+
   .barber-options,
   .appointment-summary dl {
     grid-template-columns: 1fr;
+  }
+
+  .time-chip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .time-chip {
+    min-height: 46px;
+    padding: 0 6px;
+  }
+
+  .admin-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .admin-stats article {
+    gap: 5px;
+    padding: 10px 8px;
+  }
+
+  .admin-stats span {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+
+  .admin-stats strong {
+    font-size: 1.45rem;
   }
 
   .quick-summary {
@@ -730,18 +859,51 @@ button:disabled {
   }
 
   .timeline-card {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
   }
 
   .client-avatar {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
   }
 
   .status,
   .timeline-actions {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .timeline-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .timeline-actions button {
+    flex: 1 1 auto;
+    min-height: 42px;
+  }
+
+  .timeline-actions .delete-button {
+    flex: 0 0 auto;
+  }
+
+  .admin-drawer summary {
+    min-height: 50px;
+    padding: 0 14px;
+  }
+
+  .service-settings {
+    padding: 14px;
+  }
+
+  .service-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .primary-button {
@@ -754,5 +916,38 @@ button:disabled {
 
   .confirmation-box button {
     width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .brand-lockup strong {
+    font-size: 0.94rem;
+  }
+
+  .booking-card,
+  .login-card,
+  .manual-booking {
+    padding: 14px;
+  }
+
+  .appointment-summary dl,
+  .barber-options,
+  .inline-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .time-chip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  input,
+  select {
+    min-height: 46px;
   }
 }

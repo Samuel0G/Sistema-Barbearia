@@ -280,6 +280,13 @@ function BookingPage({ appointments, onCreate, services }) {
   const blockMinutes = getServiceBlockMinutes(selectedService);
   const timeUntilAppointment = getTimeUntilAppointment(form.date, form.time, now);
   const selectedTimePassed = isAppointmentInPast(form.date, form.time, now);
+  const bookingReady = Boolean(
+    form.serviceId &&
+    form.barber &&
+    form.date &&
+    form.time &&
+    form.customerName.trim(),
+  );
   const availableTimes = useMemo(
     () => getAvailableTimes(appointments, form.date, form.barber, blockMinutes, { includePast: false, services }),
     [appointments, blockMinutes, form.date, form.barber],
@@ -434,39 +441,41 @@ function BookingPage({ appointments, onCreate, services }) {
           />
         </section>
 
-        <div className="appointment-summary">
-          <span className="summary-label">Resumo</span>
-          <dl>
-            <div>
-              <dt>Servico</dt>
-              <dd>{selectedService.name}</dd>
-            </div>
-            <div>
-              <dt>Barbeiro</dt>
-              <dd>{form.barber}</dd>
-            </div>
-            <div>
-              <dt>Data</dt>
-              <dd>{formatDate(form.date)}</dd>
-            </div>
-            <div>
-              <dt>Horario</dt>
-              <dd>{form.time || 'Selecione'}</dd>
-            </div>
-            <div>
-              <dt>Reserva</dt>
-              <dd>{blockMinutes} min</dd>
-            </div>
-          </dl>
-          {form.time && <p className="time-until">{timeUntilAppointment}</p>}
-          <button
-            className="primary-button"
-            disabled={!availableTimes.length || selectedTimePassed || appointmentConfirmed}
-            type="submit"
-          >
-            Confirmar
-          </button>
-        </div>
+        {bookingReady && (
+          <div className="appointment-summary">
+            <span className="summary-label">Resumo</span>
+            <dl>
+              <div>
+                <dt>Servico</dt>
+                <dd>{selectedService.name}</dd>
+              </div>
+              <div>
+                <dt>Barbeiro</dt>
+                <dd>{form.barber}</dd>
+              </div>
+              <div>
+                <dt>Data</dt>
+                <dd>{formatDate(form.date)}</dd>
+              </div>
+              <div>
+                <dt>Horario</dt>
+                <dd>{form.time}</dd>
+              </div>
+              <div>
+                <dt>Reserva</dt>
+                <dd>{blockMinutes} min</dd>
+              </div>
+            </dl>
+            <p className="time-until">{timeUntilAppointment}</p>
+            <button
+              className="primary-button"
+              disabled={!availableTimes.length || selectedTimePassed || appointmentConfirmed}
+              type="submit"
+            >
+              Confirmar
+            </button>
+          </div>
+        )}
 
         {error && <p className="feedback error">{error}</p>}
         {confirmation && (
@@ -663,8 +672,6 @@ function BarberDashboard({ appointments, onCreate, onDelete, onServiceChange, on
         </article>
       </div>
 
-      <ServiceSettings services={services} onServiceChange={onServiceChange} />
-
       <div className="agenda-layout">
         <div className="timeline">
           {dayAppointments.length ? (
@@ -683,7 +690,7 @@ function BarberDashboard({ appointments, onCreate, onDelete, onServiceChange, on
                 </div>
                 <span className={`status ${appointment.status}`}>{statusLabel(appointment.status)}</span>
                 <div className="timeline-actions">
-                  {appointment.type !== 'block' && (
+                  {appointment.type !== 'block' && appointment.status === 'agendado' && (
                     <>
                       <button onClick={() => onStatusChange(appointment.id, 'concluido')} type="button">
                         Concluir
@@ -713,154 +720,165 @@ function BarberDashboard({ appointments, onCreate, onDelete, onServiceChange, on
         </div>
 
         <div className="admin-side">
-          <form className="manual-booking" onSubmit={addManualAppointment}>
-            <h2>Adicionar horario</h2>
+          <details className="admin-drawer">
+            <summary>Adicionar horario</summary>
+            <form className="manual-booking drawer-content" onSubmit={addManualAppointment}>
 
-            <label>
-              Cliente
-              <input
-                value={manual.customerName}
-                onChange={(event) => setManual((current) => ({ ...current, customerName: event.target.value }))}
-                placeholder="Nome do cliente"
-              />
-            </label>
-
-            <label>
-              Servico
-              <select
-                value={manual.serviceId}
-                onChange={(event) => setManual((current) => ({ ...current, serviceId: event.target.value }))}
-              >
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>{service.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Barbeiro
-              <select
-                value={manual.barber}
-                onChange={(event) => {
-                  setSelectedBarber(event.target.value);
-                  setManual((current) => ({ ...current, barber: event.target.value }));
-                }}
-              >
-                {BARBERS.map((barber) => (
-                  <option key={barber}>{barber}</option>
-                ))}
-              </select>
-            </label>
-
-            <div className="inline-fields">
               <label>
-                Duracao
+                Cliente
                 <input
-                  min="1"
-                  type="number"
-                  value={manual.durationMinutes}
-                  onChange={(event) => setManual((current) => ({ ...current, durationMinutes: event.target.value }))}
+                  value={manual.customerName}
+                  onChange={(event) => setManual((current) => ({ ...current, customerName: event.target.value }))}
+                  placeholder="Nome do cliente"
                 />
               </label>
+
               <label>
-                Margem
-                <input
-                  min="0"
-                  type="number"
-                  value={manual.bufferMinutes}
-                  onChange={(event) => setManual((current) => ({ ...current, bufferMinutes: event.target.value }))}
-                />
+                Servico
+                <select
+                  value={manual.serviceId}
+                  onChange={(event) => setManual((current) => ({ ...current, serviceId: event.target.value }))}
+                >
+                  {services.map((service) => (
+                    <option key={service.id} value={service.id}>{service.name}</option>
+                  ))}
+                </select>
               </label>
-            </div>
 
-            <label>
-              Horario
-              <select
-                value={manual.time}
-                onChange={(event) => setManual((current) => ({ ...current, time: event.target.value }))}
-              >
-                {availableTimes.length ? (
-                  availableTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
-                ) : (
-                  <option value="">Sem horarios</option>
-                )}
-              </select>
-            </label>
+              <label>
+                Barbeiro
+                <select
+                  value={manual.barber}
+                  onChange={(event) => {
+                    setSelectedBarber(event.target.value);
+                    setManual((current) => ({ ...current, barber: event.target.value }));
+                  }}
+                >
+                  {BARBERS.map((barber) => (
+                    <option key={barber}>{barber}</option>
+                  ))}
+                </select>
+              </label>
 
-            <button className="secondary-button" disabled={!availableTimes.length} type="submit">
-              Adicionar manualmente
-            </button>
+              <div className="inline-fields">
+                <label>
+                  Duracao
+                  <input
+                    min="1"
+                    type="number"
+                    value={manual.durationMinutes}
+                    onChange={(event) => setManual((current) => ({ ...current, durationMinutes: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Margem
+                  <input
+                    min="0"
+                    type="number"
+                    value={manual.bufferMinutes}
+                    onChange={(event) => setManual((current) => ({ ...current, bufferMinutes: event.target.value }))}
+                  />
+                </label>
+              </div>
 
-            {manualError && <p className="feedback error">{manualError}</p>}
-          </form>
-
-          <form className="manual-booking" onSubmit={addManualBlock}>
-            <h2>Bloquear horario</h2>
-
-            <label>
-              Motivo
-              <input
-                value={block.reason}
-                onChange={(event) => setBlock((current) => ({ ...current, reason: event.target.value }))}
-                placeholder="Almoco, manutencao..."
-              />
-            </label>
-
-            <div className="inline-fields">
               <label>
                 Horario
                 <select
-                  value={block.time}
-                  onChange={(event) => setBlock((current) => ({ ...current, time: event.target.value }))}
+                  value={manual.time}
+                  onChange={(event) => setManual((current) => ({ ...current, time: event.target.value }))}
                 >
-                  {availableBlockTimes.length ? (
-                    availableBlockTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
+                  {availableTimes.length ? (
+                    availableTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
                   ) : (
                     <option value="">Sem horarios</option>
                   )}
                 </select>
               </label>
+
+              <button className="secondary-button" disabled={!availableTimes.length} type="submit">
+                Adicionar manualmente
+              </button>
+
+              {manualError && <p className="feedback error">{manualError}</p>}
+            </form>
+          </details>
+
+          <details className="admin-drawer">
+            <summary>Bloquear horario</summary>
+            <form className="manual-booking drawer-content" onSubmit={addManualBlock}>
+
               <label>
-                Minutos
+                Motivo
                 <input
-                  min="1"
-                  type="number"
-                  value={block.durationMinutes}
-                  onChange={(event) => setBlock((current) => ({ ...current, durationMinutes: event.target.value }))}
+                  value={block.reason}
+                  onChange={(event) => setBlock((current) => ({ ...current, reason: event.target.value }))}
+                  placeholder="Almoco, manutencao..."
                 />
               </label>
-            </div>
 
-            <button className="secondary-button" disabled={!availableBlockTimes.length} type="submit">
-              Bloquear
-            </button>
+              <div className="inline-fields">
+                <label>
+                  Horario
+                  <select
+                    value={block.time}
+                    onChange={(event) => setBlock((current) => ({ ...current, time: event.target.value }))}
+                  >
+                    {availableBlockTimes.length ? (
+                      availableBlockTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
+                    ) : (
+                      <option value="">Sem horarios</option>
+                    )}
+                  </select>
+                </label>
+                <label>
+                  Minutos
+                  <input
+                    min="1"
+                    type="number"
+                    value={block.durationMinutes}
+                    onChange={(event) => setBlock((current) => ({ ...current, durationMinutes: event.target.value }))}
+                  />
+                </label>
+              </div>
 
-            {blockError && <p className="feedback error">{blockError}</p>}
-          </form>
+              <button className="secondary-button" disabled={!availableBlockTimes.length} type="submit">
+                Bloquear
+              </button>
 
-          <section className="manual-booking">
-            <h2>Historico por cliente</h2>
-            <input
-              value={historyQuery}
-              onChange={(event) => setHistoryQuery(event.target.value)}
-              placeholder="Buscar cliente"
-            />
-            <div className="history-list">
-              {historyItems.length ? (
-                historyItems.map((item) => (
-                  <article key={item.id}>
-                    <strong>{item.customerName}</strong>
-                    <span>{formatDate(item.date)} - {item.time} - {item.service}</span>
-                    <small>{statusLabel(item.status)}</small>
-                  </article>
-                ))
-              ) : (
-                <p>Digite um nome para ver o historico.</p>
-              )}
-            </div>
-          </section>
+              {blockError && <p className="feedback error">{blockError}</p>}
+            </form>
+          </details>
+
+          <details className="admin-drawer">
+            <summary>Historico por cliente</summary>
+            <section className="manual-booking drawer-content">
+              <input
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Buscar cliente"
+              />
+              <div className="history-list">
+                {historyItems.length ? (
+                  historyItems.map((item) => (
+                    <article key={item.id}>
+                      <strong>{item.customerName}</strong>
+                      <span>{formatDate(item.date)} - {item.time} - {item.service}</span>
+                      <small>{statusLabel(item.status)}</small>
+                    </article>
+                  ))
+                ) : (
+                  <p>Digite um nome para ver o historico.</p>
+                )}
+              </div>
+            </section>
+          </details>
         </div>
       </div>
+
+      <details className="admin-drawer full-drawer">
+        <summary>Duracao e margem dos servicos</summary>
+        <ServiceSettings services={services} onServiceChange={onServiceChange} />
+      </details>
     </section>
   );
 }
