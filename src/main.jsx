@@ -188,9 +188,18 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell client-shell">
+      <ClientHeader />
       <BookingPage appointments={appointments} onCreate={createAppointment} services={services} />
     </main>
+  );
+}
+
+function ClientHeader() {
+  return (
+    <header className="client-topbar">
+      <img src="/assets/logo-samuka.png" alt="Samuka Barbearia" />
+    </header>
   );
 }
 
@@ -394,6 +403,15 @@ function BookingPage({ appointments, onCreate, services }) {
           </div>
         </section>
 
+        <section className="step-section">
+          <h2>Nome</h2>
+          <input
+            value={form.customerName}
+            onChange={(event) => updateField('customerName', event.target.value)}
+            placeholder="Digite seu nome"
+          />
+        </section>
+
         <section className="step-section split">
           <div>
             <h2>Data</h2>
@@ -424,15 +442,6 @@ function BookingPage({ appointments, onCreate, services }) {
               )}
             </div>
           </div>
-        </section>
-
-        <section className="step-section">
-          <h2>Nome</h2>
-          <input
-            value={form.customerName}
-            onChange={(event) => updateField('customerName', event.target.value)}
-            placeholder="Digite seu nome"
-          />
         </section>
 
         {bookingReady && (
@@ -1124,3 +1133,9 @@ function statusLabel(status) {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

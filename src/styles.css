@@ -1198,3 +1198,163 @@ select:focus {
 .timeline-actions button {
   background: transparent;
 }
+
+/* Web app shell */
+html {
+  min-height: 100%;
+  background: #0d0d0d;
+}
+
+body {
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior-y: none;
+}
+
+.app-shell {
+  width: min(1180px, calc(100% - 32px));
+  min-height: 100dvh;
+  padding-top: 16px;
+}
+
+.client-shell {
+  width: min(820px, calc(100% - 32px));
+}
+
+.client-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.client-topbar img {
+  display: block;
+  width: 160px;
+  height: auto;
+  object-fit: contain;
+}
+
+.booking-app,
+.agenda-screen {
+  gap: 12px;
+}
+
+.booking-header,
+.agenda-heading,
+.booking-card,
+.login-card,
+.manual-booking,
+.admin-stats article,
+.timeline-card,
+.empty-agenda,
+.admin-drawer {
+  border-radius: 12px;
+}
+
+.booking-header {
+  min-height: auto;
+  padding: 20px;
+}
+
+.booking-header h1 {
+  font-size: clamp(1.9rem, 5vw, 2.7rem);
+}
+
+.booking-card {
+  gap: 14px;
+  padding: 18px;
+}
+
+.step-section {
+  gap: 12px;
+}
+
+.step-section + .step-section {
+  padding-top: 16px;
+}
+
+.service-option,
+.barber-option,
+.time-chip,
+input,
+select,
+.primary-button {
+  min-height: 52px;
+}
+
+.service-option,
+.barber-option,
+.time-chip,
+input,
+select,
+.primary-button,
+.secondary-button {
+  border-radius: 10px;
+}
+
+.service-option {
+  min-height: 72px;
+}
+
+.primary-button {
+  font-size: 1rem;
+}
+
+@media (max-width: 767px) {
+  .app-shell,
+  .client-shell {
+    width: 100%;
+    padding: 10px 10px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .client-topbar {
+    min-height: 48px;
+    margin-bottom: 8px;
+    padding: 0 4px;
+  }
+
+  .client-topbar img {
+    width: 138px;
+  }
+
+  .booking-header,
+  .agenda-heading {
+    padding: 16px;
+  }
+
+  .booking-card,
+  .login-card,
+  .manual-booking {
+    padding: 14px;
+  }
+
+  .booking-header h1,
+  .agenda-heading h1 {
+    font-size: 1.85rem;
+  }
+
+  .quick-summary {
+    padding: 12px;
+  }
+
+  .service-option {
+    padding: 13px;
+  }
+
+  .time-chip {
+    min-height: 48px;
+  }
+
+  .admin-stats article {
+    min-height: 76px;
+  }
+}
+
+@media (display-mode: standalone) {
+  .app-shell {
+    padding-top: 10px;
+  }
+}
