@@ -6,7 +6,6 @@ const APPOINTMENTS_KEY = 'barber_agenda_appointments';
 const SERVICES_KEY = 'barber_agenda_services';
 const SERVICES_VERSION_KEY = 'barber_agenda_services_version';
 const CURRENT_SERVICES_VERSION = '2';
-const BUSINESS_NAME = 'Samuka Barbearia';
 const SLOT_STEP_MINUTES = 40;
 const today = toDateInputValue(new Date());
 
@@ -169,7 +168,7 @@ function App() {
     return (
       <main className="app-shell">
         <AppHeader
-          action={isAdminLoggedIn ? <button className="ghost-button" onClick={logoutAdmin} type="button">Sair</button> : null}
+          action={isAdminLoggedIn ? <button className="logout-button" onClick={logoutAdmin} type="button">Sair</button> : null}
         />
 
         {isAdminLoggedIn ? (
@@ -190,21 +189,16 @@ function App() {
 
   return (
     <main className="app-shell">
-      <AppHeader />
       <BookingPage appointments={appointments} onCreate={createAppointment} services={services} />
     </main>
   );
 }
 
 function AppHeader({ action = null }) {
+  if (!action) return null;
+
   return (
     <header className="topbar">
-      <div className="brand-lockup">
-        <div className="brand-mark" aria-hidden="true">S</div>
-        <div>
-          <strong>{BUSINESS_NAME}</strong>
-        </div>
-      </div>
       {action}
     </header>
   );
@@ -378,7 +372,7 @@ function BookingPage({ appointments, onCreate, services }) {
                 type="button"
               >
                 <strong>{service.name}</strong>
-                <span>{service.price} - {service.durationMinutes} min + {service.bufferMinutes} min</span>
+                <span>{service.price} · {getServiceBlockMinutes(service)} min</span>
               </button>
             ))}
           </div>

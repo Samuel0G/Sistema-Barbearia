@@ -48,36 +48,9 @@ button {
 
 .topbar {
   display: flex;
-  gap: 16px;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 22px;
-}
-
-.brand-lockup {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border: 1px solid rgba(221, 181, 102, 0.28);
-  border-radius: 8px;
-  color: #fff2df;
-  background: #151311;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.45rem;
-  font-weight: 900;
-  box-shadow: inset 0 -3px 0 rgba(225, 95, 45, 0.48);
-}
-
-.brand-lockup strong {
-  display: block;
-  font-size: 1rem;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
 
 .tabs {
@@ -105,14 +78,23 @@ button {
   background: #f0bd6a;
 }
 
-.ghost-button {
-  min-height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 0 16px;
-  color: #e5d9c9;
-  background: rgba(255, 255, 255, 0.04);
-  font-weight: 850;
+.logout-button {
+  width: auto;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 7px;
+  padding: 0 13px;
+  color: #b9ad9d;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 750;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.logout-button:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #eee5d9;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 h1,
@@ -137,8 +119,8 @@ p {
 
 .login-screen {
   display: grid;
-  place-items: center;
-  min-height: calc(100vh - 130px);
+  place-items: start center;
+  min-height: auto;
 }
 
 .login-card {
@@ -251,11 +233,11 @@ p {
 .service-option,
 .barber-option {
   display: grid;
-  gap: 5px;
+  gap: 7px;
   min-height: 78px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   color: #f7f1e8;
   background: rgba(255, 255, 255, 0.035);
   text-align: left;
@@ -269,20 +251,23 @@ p {
 }
 
 .service-option strong {
-  font-size: 0.98rem;
+  color: #fff9ef;
+  font-size: 1rem;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .service-option span {
-  color: #b9ad9d;
-  font-size: 0.9rem;
-  font-weight: 750;
+  color: #a99e90;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .service-option.selected,
 .barber-option.selected {
-  border-color: rgba(240, 189, 106, 0.74);
-  background: rgba(240, 189, 106, 0.12);
+  border-color: rgba(240, 189, 106, 0.62);
+  background: rgba(240, 189, 106, 0.09);
 }
 
 label {
@@ -339,11 +324,13 @@ input[type="date"]::-webkit-datetime-edit {
 
 input[type="date"]::-webkit-calendar-picker-indicator {
   position: absolute;
+  top: 50%;
   right: 14px;
   width: 20px;
   height: 20px;
   margin: 0;
   opacity: 0.6;
+  transform: translateY(-50%);
 }
 
 input:focus,
@@ -800,7 +787,7 @@ button:disabled {
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .app-shell {
     width: 100%;
     padding: 12px 12px 30px;
@@ -819,21 +806,20 @@ button:disabled {
   }
 
   .topbar {
-    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-bottom: 10px;
   }
 
-  .brand-mark {
-    width: 42px;
-    height: 42px;
-  }
-
-  .ghost-button {
-    width: 100%;
+  .logout-button {
+    min-height: 36px;
+    flex: 0 0 auto;
   }
 
   .login-screen {
-    min-height: calc(100vh - 82px);
-    align-items: center;
+    min-height: auto;
+    align-items: start;
   }
 
   .login-card,
@@ -846,6 +832,43 @@ button:disabled {
   .agenda-heading {
     min-height: auto;
     padding: 18px;
+  }
+
+  .agenda-heading {
+    gap: 12px;
+  }
+
+  .agenda-heading label {
+    gap: 6px;
+  }
+
+  .agenda-heading label:first-of-type {
+    margin-top: 4px;
+  }
+
+  .agenda-heading input,
+  .agenda-heading select {
+    width: 100%;
+    min-height: 52px;
+    height: 52px;
+    padding-right: 14px;
+    padding-left: 14px;
+    font-size: 16px;
+    line-height: normal;
+  }
+
+  .agenda-heading input[type="date"] {
+    padding-right: 44px;
+    line-height: 52px;
+  }
+
+  .agenda-heading input[type="date"]::-webkit-date-and-time-value,
+  .agenda-heading input[type="date"]::-webkit-datetime-edit {
+    min-height: 50px;
+  }
+
+  .agenda-heading input[type="date"]::-webkit-calendar-picker-indicator {
+    right: 14px;
   }
 
   .booking-header h1,
@@ -966,10 +989,6 @@ button:disabled {
     padding-left: 10px;
   }
 
-  .brand-lockup strong {
-    font-size: 0.94rem;
-  }
-
   .booking-card,
   .login-card,
   .manual-booking {
@@ -998,4 +1017,184 @@ button:disabled {
     min-height: 46px;
     font-size: 16px;
   }
+}
+
+/* Samuka identity: neighborhood barbershop, direct and welcoming. */
+:root {
+  color: #f2f2ee;
+  background: #121212;
+}
+
+body {
+  background: #121212;
+}
+
+h1,
+h2,
+h3,
+.eyebrow,
+.admin-stats strong,
+.time-label,
+.service-option strong,
+.barber-option,
+.primary-button {
+  font-family: "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  color: #d66a2c;
+  letter-spacing: 0.08em;
+}
+
+.booking-header,
+.agenda-heading {
+  background: #181818;
+}
+
+.login-card,
+.booking-card,
+.manual-booking,
+.service-settings,
+.admin-drawer,
+.timeline-card,
+.empty-agenda,
+.admin-stats article {
+  background: #191919;
+  box-shadow: none;
+}
+
+.quick-summary,
+.service-option,
+.barber-option,
+.time-chip,
+.history-list article,
+.service-settings-grid article {
+  background: #202020;
+}
+
+.booking-header h1,
+.agenda-heading h1,
+.login-card h1,
+.step-section h2,
+.manual-booking h2,
+.service-settings h2,
+.service-settings-grid strong,
+.admin-drawer summary,
+.timeline-info h3,
+.empty-agenda h2,
+.history-list strong {
+  color: #f5f5f1;
+}
+
+.booking-header p,
+.agenda-heading p,
+.quick-summary span,
+.closed-message,
+.appointment-summary dt,
+.admin-stats span,
+.timeline-info p,
+.timeline-info small,
+.empty-agenda,
+.history-list span,
+.history-list small,
+.history-list p,
+.service-option span {
+  color: #9d9d98;
+  font-weight: 650;
+}
+
+.quick-summary strong,
+.summary-label,
+.time-until,
+.admin-stats strong,
+.service-settings-grid span,
+.admin-drawer summary::after,
+.timeline-info small,
+.time-label {
+  color: #d66a2c;
+}
+
+.service-option.selected,
+.barber-option.selected {
+  border-color: rgba(214, 106, 44, 0.7);
+  background: rgba(214, 106, 44, 0.12);
+}
+
+input,
+select {
+  color: #f5f5f1;
+  background: #111;
+}
+
+input:focus,
+select:focus {
+  border-color: #d66a2c;
+  box-shadow: 0 0 0 2px rgba(214, 106, 44, 0.16);
+}
+
+.time-chip.selected,
+.primary-button,
+.client-avatar {
+  color: #fff;
+  background: #d66a2c;
+}
+
+.primary-button:hover {
+  background: #e17639;
+}
+
+.secondary-button {
+  border-color: rgba(214, 106, 44, 0.35);
+  color: #e17639;
+  background: transparent;
+}
+
+.appointment-summary,
+.time-until,
+.timeline-card.blocked-card {
+  border-color: rgba(214, 106, 44, 0.2);
+  background: rgba(214, 106, 44, 0.08);
+}
+
+.status.agendado,
+.status.bloqueado {
+  color: #e98a55;
+  background: rgba(214, 106, 44, 0.14);
+}
+
+.agenda-heading {
+  border-left: 4px solid #d66a2c;
+}
+
+.admin-stats {
+  gap: 8px;
+}
+
+.admin-stats article {
+  border-left: 3px solid #353535;
+  border-radius: 5px;
+}
+
+.admin-stats article:first-child {
+  border-left-color: #d66a2c;
+}
+
+.admin-drawer,
+.service-settings-grid article {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.timeline-card {
+  border-left: 3px solid #292929;
+  border-radius: 5px;
+}
+
+.timeline-actions button {
+  background: transparent;
 }
