@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const APPOINTMENTS_KEY = 'barber_agenda_appointments';
 const SERVICES_KEY = 'barber_agenda_services';
+const SETTINGS_KEY = 'barber_agenda_window_settings';
 const SERVICES_VERSION_KEY = 'barber_agenda_services_version';
 const CURRENT_SERVICES_VERSION = '2';
-const SLOT_STEP_MINUTES = 40;
+const DEFAULT_SETTINGS = { openingTime: '07:00', closingTime: '19:00', windowMinutes: 60, lunchEnabled: false, lunchStart: '12:00', lunchEnd: '13:00', closedWindows: {}, reopenedLunchWindows: {} };
+const BARBERS = ['Barbeiro A', 'Barbeiro B'];
 const today = toDateInputValue(new Date());
 
 const DEFAULT_SERVICES = [
@@ -17,248 +19,179 @@ const DEFAULT_SERVICES = [
   { id: 'sobrancelha', name: 'Sobrancelha', price: 'R$ 15', durationMinutes: 20, bufferMinutes: 10 },
 ];
 
-const BARBERS = ['Barbeiro A', 'Barbeiro B'];
+function loadJson(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadSettings() {
+  const stored = loadJson(SETTINGS_KEY, {});
+  return {
+    openingTime: stored.openingTime ?? (stored.openingHour != null ? formatMinutes(stored.openingHour * 60) : DEFAULT_SETTINGS.openingTime),
+    closingTime: stored.closingTime ?? (stored.closingHour != null ? formatMinutes(stored.closingHour * 60) : DEFAULT_SETTINGS.closingTime),
+    windowMinutes: Number(stored.windowMinutes ?? DEFAULT_SETTINGS.windowMinutes),
+    lunchEnabled: Boolean(stored.lunchEnabled),
+    lunchStart: stored.lunchStart ?? DEFAULT_SETTINGS.lunchStart,
+    lunchEnd: stored.lunchEnd ?? DEFAULT_SETTINGS.lunchEnd,
+    closedWindows: stored.closedWindows ?? {},
+    reopenedLunchWindows: stored.reopenedLunchWindows ?? {},
+  };
+}
 
 function loadAppointments() {
-  try {
-    return JSON.parse(localStorage.getItem(APPOINTMENTS_KEY)) ?? [];
-  } catch {
-    return [];
-  }
+  return loadJson(APPOINTMENTS_KEY, []).map((item) => ({
+    ...item,
+    windowStart: item.windowStart ?? item.time,
+    time: item.windowStart ?? item.time,
+    type: item.type === 'appointment' ? 'agendado' : item.type,
+    origin: item.origin ?? (item.type === 'presencial' ? 'presencial' : 'online'),
+    status: item.status === 'concluido' ? 'finalizado' : item.status,
+  }));
 }
 
 function loadServices() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SERVICES_KEY));
-    if (!Array.isArray(stored) || !stored.length) return DEFAULT_SERVICES;
-    const version = localStorage.getItem(SERVICES_VERSION_KEY);
-    const merged = DEFAULT_SERVICES.map((service) => ({ ...service, ...stored.find((item) => item.id === service.id) }));
-    const migrated = merged.map((service) =>
-      version !== CURRENT_SERVICES_VERSION && service.id === 'barba' && service.durationMinutes === 40
-        ? { ...service, durationMinutes: 20 }
-        : service,
-    );
-
-    if (version !== CURRENT_SERVICES_VERSION) {
-      localStorage.setItem(SERVICES_KEY, JSON.stringify(migrated));
-      localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
-    }
-
-    return migrated;
-  } catch {
-    return DEFAULT_SERVICES;
-  }
-}
-
-function saveAppointments(appointments) {
-  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments));
-}
-
-function saveServices(services) {
-  localStorage.setItem(SERVICES_KEY, JSON.stringify(services));
-  localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
+  const stored = loadJson(SERVICES_KEY, []);
+  if (!Array.isArray(stored) || !stored.length) return DEFAULT_SERVICES;
+  const version = localStorage.getItem(SERVICES_VERSION_KEY);
+  const merged = DEFAULT_SERVICES.map((service) => ({ ...service, ...stored.find((item) => item.id === service.id) }));
+  const migrated = merged.map((service) =>
+    version !== CURRENT_SERVICES_VERSION && service.id === 'barba' && service.durationMinutes === 40
+      ? { ...service, durationMinutes: 20 }
+      : service,
+  );
+  return migrated;
 }
 
 function App() {
   const [path, setPath] = useState(() => window.location.pathname);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(
-    () => localStorage.getItem('barber_admin_session') === 'active',
-  );
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => localStorage.getItem('barber_admin_session') === 'active');
   const [appointments, setAppointments] = useState(loadAppointments);
   const [services, setServices] = useState(loadServices);
+  const [settings, setSettings] = useState(loadSettings);
 
   useEffect(() => {
     if (window.location.pathname === '/') {
       window.history.replaceState({}, '', '/agendar');
       setPath('/agendar');
     }
-
     const handlePopState = () => setPath(window.location.pathname);
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  useEffect(() => localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments)), [appointments]);
   useEffect(() => {
-    saveAppointments(appointments);
-  }, [appointments]);
-
-  useEffect(() => {
-    saveServices(services);
+    localStorage.setItem(SERVICES_KEY, JSON.stringify(services));
+    localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
   }, [services]);
+  useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
 
   useEffect(() => {
-    const reloadLocalData = () => {
+    const reload = () => {
       setAppointments(loadAppointments());
       setServices(loadServices());
+      setSettings(loadSettings());
     };
-
-    const handleStorageChange = (event) => {
-      if (event.key === APPOINTMENTS_KEY || event.key === SERVICES_KEY) {
-        reloadLocalData();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('focus', reloadLocalData);
-
+    window.addEventListener('focus', reload);
+    window.addEventListener('storage', reload);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('focus', reloadLocalData);
+      window.removeEventListener('focus', reload);
+      window.removeEventListener('storage', reload);
     };
   }, []);
 
-  const loginAdmin = (username, password) => {
-    if (username === 'admin' && password === '1234') {
-      localStorage.setItem('barber_admin_session', 'active');
-      setIsAdminLoggedIn(true);
-      return true;
-    }
-
-    return false;
-  };
-
-  const logoutAdmin = () => {
-    localStorage.removeItem('barber_admin_session');
-    setIsAdminLoggedIn(false);
-  };
-
   const createAppointment = (payload) => {
-    const normalized = normalizeScheduleItem(payload, services);
-    const validation = validateScheduleItem(normalized, appointments, services);
-
+    const normalized = {
+      ...payload,
+      windowStart: payload.windowStart ?? payload.time,
+      time: payload.windowStart ?? payload.time,
+      barber: payload.barber ?? BARBERS[0],
+      type: payload.type ?? 'agendado',
+      origin: payload.origin ?? (payload.type === 'presencial' ? 'presencial' : 'online'),
+    };
+    const validation = validateWindowReservation(normalized, appointments, settings);
     if (!validation.ok) return validation;
 
     const appointment = {
       id: crypto.randomUUID(),
-      status: normalized.type === 'block' ? 'bloqueado' : 'agendado',
+      status: 'agendado',
       createdAt: new Date().toISOString(),
       ...normalized,
     };
-
     setAppointments((current) => [...current, appointment]);
     return { ok: true, appointment };
   };
 
   const updateStatus = (id, status) => {
     setAppointments((current) =>
-      current.map((appointment) =>
-        appointment.id === id ? { ...appointment, status } : appointment,
-      ),
-    );
-  };
-
-  const deleteAppointment = (id) => {
-    setAppointments((current) => current.filter((appointment) => appointment.id !== id));
-  };
-
-  const updateService = (serviceId, patch) => {
-    setServices((current) =>
-      current.map((service) =>
-        service.id === serviceId
+      current.map((item) => item.id === id
           ? {
-              ...service,
-              ...patch,
-            }
-          : service,
-      ),
+            ...item,
+            status,
+            ...(status === 'chegou' ? { checkedInAt: new Date().toISOString() } : {}),
+            ...(status === 'em_atendimento' ? { startedAt: new Date().toISOString() } : {}),
+            ...(status === 'finalizado' ? { finishedAt: new Date().toISOString() } : {}),
+          }
+        : item),
     );
+  };
+
+  const loginAdmin = (username, password) => {
+    if (username !== 'admin' || password !== '1234') return false;
+    localStorage.setItem('barber_admin_session', 'active');
+    setIsAdminLoggedIn(true);
+    return true;
   };
 
   if (path === '/admin') {
     return (
       <main className="app-shell">
-        <AppHeader
-          action={isAdminLoggedIn ? <button className="logout-button" onClick={logoutAdmin} type="button">Sair</button> : null}
-        />
-
+        {isAdminLoggedIn && (
+          <header className="topbar">
+            <button className="logout-button" onClick={() => {
+              localStorage.removeItem('barber_admin_session');
+              setIsAdminLoggedIn(false);
+            }} type="button">Sair</button>
+          </header>
+        )}
         {isAdminLoggedIn ? (
           <BarberDashboard
             appointments={appointments}
             onCreate={createAppointment}
-            onDelete={deleteAppointment}
-            onServiceChange={updateService}
+            onDelete={(id) => setAppointments((current) => current.filter((item) => item.id !== id))}
+            onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
             onStatusChange={updateStatus}
             services={services}
+            settings={settings}
           />
-        ) : (
-          <AdminLogin onLogin={loginAdmin} />
-        )}
+        ) : <AdminLogin onLogin={loginAdmin} />}
       </main>
     );
   }
 
   return (
     <main className="app-shell client-shell">
-      <ClientHeader />
-      <BookingPage appointments={appointments} onCreate={createAppointment} services={services} />
+      <header className="client-topbar"><img src="/assets/logo-samuka.png" alt="Samuka Barbearia" /></header>
+      <BookingPage appointments={appointments} onCreate={createAppointment} services={services} settings={settings} />
     </main>
-  );
-}
-
-function ClientHeader() {
-  return (
-    <header className="client-topbar">
-      <img src="/assets/logo-samuka.png" alt="Samuka Barbearia" />
-    </header>
-  );
-}
-
-function AppHeader({ action = null }) {
-  if (!action) return null;
-
-  return (
-    <header className="topbar">
-      {action}
-    </header>
   );
 }
 
 function AdminLogin({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
-
-  const submitLogin = (event) => {
-    event.preventDefault();
-    const ok = onLogin(credentials.username.trim(), credentials.password);
-
-    if (!ok) {
-      setError('Usuario ou senha invalidos.');
-    }
-  };
-
   return (
     <section className="login-screen">
-      <form className="login-card" onSubmit={submitLogin}>
-        <div>
-          <span className="eyebrow">Login</span>
-          <h1>Entrar no painel</h1>
-        </div>
-
-        <label>
-          Usuario
-          <input
-            value={credentials.username}
-            onChange={(event) => {
-              setError('');
-              setCredentials((current) => ({ ...current, username: event.target.value }));
-            }}
-            placeholder="admin"
-          />
-        </label>
-
-        <label>
-          Senha
-          <input
-            type="password"
-            value={credentials.password}
-            onChange={(event) => {
-              setError('');
-              setCredentials((current) => ({ ...current, password: event.target.value }));
-            }}
-            placeholder="1234"
-          />
-        </label>
-
+      <form className="login-card" onSubmit={(event) => {
+        event.preventDefault();
+        if (!onLogin(credentials.username.trim(), credentials.password)) setError('Usuario ou senha invalidos.');
+      }}>
+        <div><span className="eyebrow">Login</span><h1>Entrar no painel</h1></div>
+        <label>Usuario<input value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} placeholder="admin" /></label>
+        <label>Senha<input type="password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} placeholder="1234" /></label>
         <button className="primary-button" type="submit">Entrar</button>
         {error && <p className="feedback error">{error}</p>}
       </form>
@@ -266,850 +199,440 @@ function AdminLogin({ onLogin }) {
   );
 }
 
-function BookingPage({ appointments, onCreate, services }) {
-  const now = useNowMinute();
+function BookingPage({ appointments, onCreate, services, settings }) {
   const [form, setForm] = useState({
     serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id,
     barber: BARBERS[0],
     date: today,
-    time: '',
+    windowStart: '',
     customerName: '',
   });
   const [error, setError] = useState('');
-  const [confirmation, setConfirmation] = useState('');
-  const appointmentConfirmed = Boolean(confirmation);
-
+  const [confirmedAppointmentId, setConfirmedAppointmentId] = useState('');
+  const confirmation = Boolean(confirmedAppointmentId);
   const selectedService = services.find((service) => service.id === form.serviceId) ?? services[0];
-  const blockMinutes = getServiceBlockMinutes(selectedService);
-  const timeUntilAppointment = getTimeUntilAppointment(form.date, form.time, now);
-  const selectedTimePassed = isAppointmentInPast(form.date, form.time, now);
-  const bookingReady = Boolean(
-    form.serviceId &&
-    form.barber &&
-    form.date &&
-    form.time &&
-    form.customerName.trim(),
-  );
-  const availableTimes = useMemo(
-    () => getAvailableTimes(appointments, form.date, form.barber, blockMinutes, { includePast: false, services }),
-    [appointments, blockMinutes, form.date, form.barber],
-  );
+  const windows = getWindowAvailability(appointments, form.date, form.barber, settings, false);
+  const confirmedAppointment = appointments.find((item) => item.id === confirmedAppointmentId);
+  const availabilityInfo = getClientAvailability(windows, form.date, settings);
+  const confirmedWindowInfo = confirmedAppointment
+    ? getClientWindowInfo(appointments, confirmedAppointment.date, confirmedAppointment.barber, confirmedAppointment.windowStart, settings, confirmedAppointment.id)
+    : null;
 
   useEffect(() => {
-    if (!availableTimes.includes(form.time)) {
-      setForm((current) => ({ ...current, time: availableTimes[0] ?? '' }));
+    if (!windows.some((window) => window.start === form.windowStart && window.isOpen)) {
+      setForm((current) => ({ ...current, windowStart: windows.find((window) => window.isOpen)?.start ?? '' }));
     }
-  }, [availableTimes, form.time]);
-
-  useEffect(() => {
-    if (!services.some((service) => service.id === form.serviceId)) {
-      setForm((current) => ({ ...current, serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id }));
-    }
-  }, [form.serviceId, services]);
+  }, [appointments, form.barber, form.date, settings]);
 
   const updateField = (field, value) => {
     setError('');
     setForm((current) => ({ ...current, [field]: value }));
   };
 
-  const submitAppointment = (event) => {
+  const submit = (event) => {
     event.preventDefault();
-
-    if (appointmentConfirmed) return;
-
-    if (!form.customerName.trim() || !form.time) {
-      setError('Informe seu nome e escolha um horario.');
+    if (!form.customerName.trim() || !form.windowStart) {
+      setError('Informe seu nome e escolha uma janela.');
       return;
     }
-
-    if (isAppointmentInPast(form.date, form.time)) {
-      setError('Esse horario ja passou. Escolha outro horario.');
-      return;
-    }
-
     const result = onCreate({
+      ...form,
       customerName: form.customerName.trim(),
-      serviceId: selectedService.id,
       service: selectedService.name,
-      barber: form.barber,
-      date: form.date,
-      time: form.time,
-      durationMinutes: selectedService.durationMinutes,
-      bufferMinutes: selectedService.bufferMinutes,
-      type: 'appointment',
+      type: 'agendado',
+      origin: 'online',
     });
-
     if (!result.ok) {
       setError(result.message);
       return;
     }
-
-    setConfirmation(
-      `${result.appointment.customerName}: ${formatDate(result.appointment.date)} as ${result.appointment.time} com ${result.appointment.barber}. ${getTimeUntilAppointment(result.appointment.date, result.appointment.time)}`,
-    );
-  };
-
-  const startNewAppointment = () => {
-    setConfirmation('');
-    setError('');
-    setForm((current) => ({ ...current, time: '', customerName: '' }));
+    setConfirmedAppointmentId(result.appointment.id);
   };
 
   return (
     <section className="booking-app">
       <div className="booking-header">
-        <div>
-          <span className="eyebrow">Agendamento online</span>
-          <h1>Marque seu horario</h1>
-          <p>{getBusinessLabel(form.date)}</p>
-        </div>
-        <div className="quick-summary">
-          <span>{blockMinutes} min reservados</span>
-          <strong>{selectedService.price}</strong>
-        </div>
+        <div><span className="eyebrow">Agendamento online</span><h1>Escolha sua janela</h1><p>Atendimento das {settings.openingTime} as {settings.closingTime}.</p></div>
+        <div className="quick-summary"><span>Fila inteligente</span><strong>{selectedService.price}</strong></div>
       </div>
-
-      <form className="booking-card" onSubmit={submitAppointment}>
+      {confirmedAppointment && confirmedWindowInfo ? (
+        <section className="my-appointment">
+          <div className="my-appointment-heading"><div><span className="eyebrow">Meu atendimento</span><h2>{confirmedAppointment.customerName}</h2></div><span className={`status ${confirmedAppointment.status}`}>{statusLabel(confirmedAppointment.status)}</span></div>
+          <dl>
+            <div><dt>Janela</dt><dd>{formatWindow(confirmedAppointment.windowStart, settings)}</dd></div>
+            <div><dt>Origem</dt><dd>{originLabel(confirmedAppointment.origin)}</dd></div>
+            <div><dt>Status</dt><dd>{statusLabel(confirmedAppointment.status)}</dd></div>
+          </dl>
+          <ClientQueueInfo info={confirmedWindowInfo} />
+          <button onClick={() => { setConfirmedAppointmentId(''); setForm((current) => ({ ...current, customerName: '', windowStart: '' })); }} type="button">Novo agendamento</button>
+        </section>
+      ) : <ClientAvailability info={availabilityInfo} />}
+      <form className={`booking-card ${confirmation ? 'booking-confirmed' : ''}`} onSubmit={submit}>
+        <fieldset className="booking-fields" disabled={Boolean(confirmation)}>
+        <section className="step-section split">
+          <div><h2>Seu nome</h2><input value={form.customerName} onChange={(event) => updateField('customerName', event.target.value)} placeholder="Digite seu nome" /></div>
+          <div><h2>Data</h2><input type="date" min={today} value={form.date} onChange={(event) => updateField('date', event.target.value)} /></div>
+        </section>
         <section className="step-section">
           <h2>Servico</h2>
           <div className="service-options">
             {services.map((service) => (
-              <button
-                className={form.serviceId === service.id ? 'service-option selected' : 'service-option'}
-                key={service.id}
-                onClick={() => updateField('serviceId', service.id)}
-                type="button"
-              >
-                <strong>{service.name}</strong>
-                <span>{service.price} · {getServiceBlockMinutes(service)} min</span>
+              <button className={form.serviceId === service.id ? 'service-option selected' : 'service-option'} key={service.id} onClick={() => updateField('serviceId', service.id)} type="button">
+                <strong>{service.name}</strong><span>{service.price}</span>
               </button>
             ))}
           </div>
         </section>
-
         <section className="step-section">
           <h2>Barbeiro</h2>
           <div className="barber-options">
-            {BARBERS.map((barber) => (
-              <button
-                className={form.barber === barber ? 'barber-option selected' : 'barber-option'}
-                key={barber}
-                onClick={() => updateField('barber', barber)}
-                type="button"
-              >
-                {barber}
+            {BARBERS.map((barber) => <button className={form.barber === barber ? 'barber-option selected' : 'barber-option'} key={barber} onClick={() => updateField('barber', barber)} type="button">{barber}</button>)}
+          </div>
+        </section>
+        <section className="step-section">
+          <h2>Janela de atendimento</h2>
+          <div className="window-card-grid">
+            {windows.filter((window) => window.isOpen).map((window) => (
+              <button className={`window-card ${form.windowStart === window.start ? 'selected' : ''}`} key={window.start} onClick={() => updateField('windowStart', window.start)} type="button">
+                <strong>{window.label}</strong>
               </button>
             ))}
           </div>
+          {!windows.some((window) => window.isOpen) && <p className="closed-message">Nao ha janelas abertas para esta data e profissional.</p>}
         </section>
-
-        <section className="step-section">
-          <h2>Nome</h2>
-          <input
-            value={form.customerName}
-            onChange={(event) => updateField('customerName', event.target.value)}
-            placeholder="Digite seu nome"
-          />
-        </section>
-
-        <section className="step-section split">
-          <div>
-            <h2>Data</h2>
-            <input
-              type="date"
-              min={today}
-              value={form.date}
-              onChange={(event) => updateField('date', event.target.value)}
-            />
-          </div>
-
-          <div>
-            <h2>Horario</h2>
-            <div className="time-chip-grid">
-              {availableTimes.length ? (
-                availableTimes.map((time) => (
-                  <button
-                    className={form.time === time ? 'time-chip selected' : 'time-chip'}
-                    key={time}
-                    onClick={() => updateField('time', time)}
-                    type="button"
-                  >
-                    {time}
-                  </button>
-                ))
-              ) : (
-                <p className="closed-message">Sem horarios disponiveis.</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {bookingReady && (
+        {form.customerName.trim() && form.windowStart && (
           <div className="appointment-summary">
             <span className="summary-label">Resumo</span>
             <dl>
-              <div>
-                <dt>Servico</dt>
-                <dd>{selectedService.name}</dd>
-              </div>
-              <div>
-                <dt>Barbeiro</dt>
-                <dd>{form.barber}</dd>
-              </div>
-              <div>
-                <dt>Data</dt>
-                <dd>{formatDate(form.date)}</dd>
-              </div>
-              <div>
-                <dt>Horario</dt>
-                <dd>{form.time}</dd>
-              </div>
-              <div>
-                <dt>Reserva</dt>
-                <dd>{blockMinutes} min</dd>
-              </div>
+              <div><dt>Servico</dt><dd>{selectedService.name}</dd></div>
+              <div><dt>Barbeiro</dt><dd>{form.barber}</dd></div>
+              <div><dt>Janela</dt><dd>{formatWindow(form.windowStart, settings)}</dd></div>
             </dl>
-            <p className="time-until">{timeUntilAppointment}</p>
-            <button
-              className="primary-button"
-              disabled={!availableTimes.length || selectedTimePassed || appointmentConfirmed}
-              type="submit"
-            >
-              Confirmar
-            </button>
+            <button className="primary-button" disabled={Boolean(confirmation)} type="submit">Confirmar agendamento</button>
           </div>
         )}
-
         {error && <p className="feedback error">{error}</p>}
-        {confirmation && (
-          <div className="feedback success confirmation-box">
-            <p>{confirmation}</p>
-            <button onClick={startNewAppointment} type="button">Novo agendamento</button>
-          </div>
-        )}
+        </fieldset>
       </form>
     </section>
   );
 }
 
-function BarberDashboard({ appointments, onCreate, onDelete, onServiceChange, onStatusChange, services }) {
-  const now = useNowMinute();
+function ClientAvailability({ info }) {
+  return (
+    <section className="client-live-card">
+      <div className="client-live-heading">
+        <div><span className="eyebrow">Disponibilidade</span><strong>Janelas de atendimento</strong></div>
+      </div>
+      {info.current && <div className="availability-row"><span>Janela atual</span><strong>{info.current.label}</strong></div>}
+      {info.next ? <div className="availability-row"><span>Proxima janela</span><strong>{info.next.label}</strong></div> : <p className="no-availability">Nao ha novas janelas disponiveis hoje.</p>}
+    </section>
+  );
+}
+
+function ClientQueueInfo({ info }) {
+  if (!info.position) return null;
+  return (
+    <div className="queue-position">
+      <strong>Voce esta na posicao {info.position} da fila</strong>
+      <span>{info.ahead === 1 ? 'Existe 1 cliente na sua frente' : `Existem ${info.ahead} clientes na sua frente`}</span>
+    </div>
+  );
+}
+
+function BarberDashboard({ appointments, onCreate, onDelete, onSettingsChange, onStatusChange, services, settings }) {
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedBarber, setSelectedBarber] = useState(BARBERS[0]);
-  const [manual, setManual] = useState({
-    customerName: '',
-    serviceId: services[0]?.id ?? DEFAULT_SERVICES[0].id,
-    barber: BARBERS[0],
-    time: '',
-    durationMinutes: services[0]?.durationMinutes ?? 40,
-    bufferMinutes: services[0]?.bufferMinutes ?? 10,
-  });
-  const [block, setBlock] = useState({
-    time: '',
-    durationMinutes: 40,
-    reason: 'Bloqueio manual',
-  });
+  const [manual, setManual] = useState({ customerName: '', serviceId: services[0]?.id, barber: BARBERS[0], windowStart: '', type: 'presencial', origin: 'presencial' });
   const [manualError, setManualError] = useState('');
-  const [blockError, setBlockError] = useState('');
   const [historyQuery, setHistoryQuery] = useState('');
-
-  const manualBlockMinutes = Number(manual.durationMinutes) + Number(manual.bufferMinutes);
-  const dayAppointments = useMemo(
-    () =>
-      appointments
-        .filter(
-          (appointment) =>
-            appointment.date === selectedDate &&
-            (appointment.barber ?? BARBERS[0]) === selectedBarber,
-        )
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, selectedDate, selectedBarber],
+  const windows = getWindowAvailability(appointments, selectedDate, selectedBarber, settings, true);
+  const allDayItems = appointments.filter((item) => item.date === selectedDate);
+  const dayItems = appointments
+    .filter((item) => item.date === selectedDate && (item.barber ?? BARBERS[0]) === selectedBarber)
+    .sort(queueSort);
+  const activeQueue = dayItems.filter((item) => ['chegou', 'aguardando', 'em_atendimento'].includes(item.status));
+  const availableWindows = windows.filter((window) => window.isOpen);
+  const openWindowsCount = BARBERS.reduce(
+    (total, barber) => total + getWindowAvailability(appointments, selectedDate, barber, settings, true).filter((window) => window.isOpen).length,
+    0,
   );
+  const nextAvailable = getSuggestedWindow(windows, selectedDate, settings);
+  const historyItems = appointments
+    .filter((item) => historyQuery.trim() && item.customerName?.toLowerCase().includes(historyQuery.trim().toLowerCase()))
+    .sort((a, b) => `${b.date} ${b.windowStart}`.localeCompare(`${a.date} ${a.windowStart}`))
+    .slice(0, 8);
 
-  const availableTimes = useMemo(
-    () => getAvailableTimes(appointments, selectedDate, selectedBarber, manualBlockMinutes, { includePast: true, services }),
-    [appointments, manualBlockMinutes, selectedDate, selectedBarber],
-  );
-
-  const availableBlockTimes = useMemo(
-    () => getAvailableTimes(appointments, selectedDate, selectedBarber, Number(block.durationMinutes), { includePast: true, services }),
-    [appointments, block.durationMinutes, selectedDate, selectedBarber],
-  );
-
-  const completedCount = dayAppointments.filter(
-    (appointment) => appointment.status === 'concluido',
-  ).length;
-
-  const historyItems = useMemo(() => {
-    const query = historyQuery.trim().toLowerCase();
-    if (!query) return [];
-
-    return appointments
-      .filter((appointment) => appointment.type !== 'block')
-      .filter((appointment) => appointment.customerName?.toLowerCase().includes(query))
-      .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
-      .slice(0, 8);
-  }, [appointments, historyQuery]);
+  useEffect(() => {
+    if (!availableWindows.some((window) => window.start === manual.windowStart)) {
+      setManual((current) => ({ ...current, windowStart: nextAvailable?.start ?? availableWindows[0]?.start ?? '' }));
+    }
+  }, [appointments, selectedBarber, selectedDate, settings]);
 
   useEffect(() => {
     setManual((current) => ({ ...current, barber: selectedBarber }));
   }, [selectedBarber]);
 
-  useEffect(() => {
-    const service = services.find((item) => item.id === manual.serviceId) ?? services[0];
-    if (!service) return;
-
-    setManual((current) => ({
-      ...current,
-      durationMinutes: service.durationMinutes,
-      bufferMinutes: service.bufferMinutes,
-    }));
-  }, [manual.serviceId, services]);
-
-  useEffect(() => {
-    if (!availableTimes.includes(manual.time)) {
-      setManual((current) => ({ ...current, time: availableTimes[0] ?? '' }));
-    }
-  }, [availableTimes, manual.time]);
-
-  useEffect(() => {
-    if (!availableBlockTimes.includes(block.time)) {
-      setBlock((current) => ({ ...current, time: availableBlockTimes[0] ?? '' }));
-    }
-  }, [availableBlockTimes, block.time]);
-
-  const addManualAppointment = (event) => {
+  const addManual = (event) => {
     event.preventDefault();
     setManualError('');
-
     const service = services.find((item) => item.id === manual.serviceId) ?? services[0];
-
-    if (!manual.customerName.trim() || !manual.time) {
-      setManualError('Informe nome e um horario livre.');
+    if (!manual.customerName.trim() || !manual.windowStart) {
+      setManualError(nextAvailable ? `Escolha uma janela. Proxima sugestao: ${nextAvailable.label}.` : 'Nao ha janelas abertas.');
       return;
     }
-
     const result = onCreate({
+      ...manual,
       customerName: manual.customerName.trim(),
-      serviceId: service.id,
-      service: service.name,
-      barber: manual.barber,
       date: selectedDate,
-      time: manual.time,
-      durationMinutes: Number(manual.durationMinutes),
-      bufferMinutes: Number(manual.bufferMinutes),
-      type: 'appointment',
+      service: service.name,
     });
-
     if (!result.ok) {
       setManualError(result.message);
       return;
     }
-
-    setManual((current) => ({ ...current, customerName: '', time: '' }));
-  };
-
-  const addManualBlock = (event) => {
-    event.preventDefault();
-    setBlockError('');
-
-    if (!block.time || Number(block.durationMinutes) <= 0) {
-      setBlockError('Informe um horario e uma duracao valida.');
-      return;
-    }
-
-    const result = onCreate({
-      customerName: block.reason.trim() || 'Bloqueio manual',
-      serviceId: 'block',
-      service: block.reason.trim() || 'Bloqueio manual',
-      barber: selectedBarber,
-      date: selectedDate,
-      time: block.time,
-      durationMinutes: Number(block.durationMinutes),
-      bufferMinutes: 0,
-      type: 'block',
-    });
-
-    if (!result.ok) {
-      setBlockError(result.message);
-      return;
-    }
-
-    setBlock((current) => ({ ...current, time: '', reason: 'Bloqueio manual' }));
+    setManual((current) => ({ ...current, customerName: '', windowStart: '', origin: 'presencial' }));
   };
 
   return (
     <section className="agenda-screen">
       <div className="agenda-heading">
-        <div>
-          <span className="eyebrow">Agenda do barbeiro</span>
-          <h1>{formatDate(selectedDate)}</h1>
-          <p>{selectedBarber} - {dayAppointments.length} itens na agenda</p>
-        </div>
-        <label>
-          Data
-          <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
-        </label>
-        <label>
-          Barbeiro
-          <select value={selectedBarber} onChange={(event) => setSelectedBarber(event.target.value)}>
-            {BARBERS.map((barber) => (
-              <option key={barber}>{barber}</option>
-            ))}
-          </select>
-        </label>
+        <div><span className="eyebrow">Agenda por janelas</span><h1>{formatDate(selectedDate)}</h1><p>{selectedBarber} · {activeQueue.length} na fila agora</p></div>
+        <label>Data<input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></label>
+        <label>Barbeiro<select value={selectedBarber} onChange={(event) => setSelectedBarber(event.target.value)}>{BARBERS.map((barber) => <option key={barber}>{barber}</option>)}</select></label>
       </div>
-
       <div className="admin-stats">
-        <article>
-          <span>Agendamentos do dia</span>
-          <strong>{dayAppointments.filter((item) => item.type !== 'block').length}</strong>
-        </article>
-        <article>
-          <span>Horarios livres</span>
-          <strong>{availableTimes.length}</strong>
-        </article>
-        <article>
-          <span>Concluidos</span>
-          <strong>{completedCount}</strong>
-        </article>
+        <article><span>Atendimentos do dia</span><strong>{allDayItems.length}</strong></article>
+        <article><span>Aguardando</span><strong>{allDayItems.filter((item) => ['chegou', 'aguardando'].includes(item.status)).length}</strong></article>
+        <article><span>Em atendimento</span><strong>{allDayItems.filter((item) => item.status === 'em_atendimento').length}</strong></article>
+        <article><span>Janelas abertas</span><strong>{openWindowsCount}</strong></article>
+        <article><span>Cancelamentos</span><strong>{allDayItems.filter((item) => item.status === 'cancelado').length}</strong></article>
+        <article><span>Ausentes</span><strong>{allDayItems.filter((item) => item.status === 'ausente').length}</strong></article>
       </div>
-
       <div className="agenda-layout">
-        <div className="timeline">
-          {dayAppointments.length ? (
-            dayAppointments.map((appointment) => (
-              <article className={appointment.type === 'block' ? 'timeline-card blocked-card' : 'timeline-card'} key={appointment.id}>
-                <div className="client-avatar">
-                  <span>{appointment.type === 'block' ? 'B' : appointment.customerName[0]}</span>
-                </div>
-                <div className="timeline-info">
-                  <span className="time-label">
-                    {appointment.time} - {minutesToTime(timeToMinutes(appointment.time) + getAppointmentBlockMinutes(appointment, services))}
-                  </span>
-                  <h3>{appointment.customerName}</h3>
-                  <p>{appointment.service} - {appointment.barber ?? BARBERS[0]}</p>
-                  <small>{appointment.type === 'block' ? `${appointment.durationMinutes} min bloqueados` : getTimeUntilAppointment(appointment.date, appointment.time, now)}</small>
-                </div>
-                <span className={`status ${appointment.status}`}>{statusLabel(appointment.status)}</span>
-                <div className="timeline-actions">
-                  {appointment.type !== 'block' && appointment.status === 'agendado' && (
-                    <>
-                      <button onClick={() => onStatusChange(appointment.id, 'concluido')} type="button">
-                        Concluir
-                      </button>
-                      <button onClick={() => onStatusChange(appointment.id, 'cancelado')} type="button">
-                        Cancelar
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="delete-button"
-                    onClick={() => onDelete(appointment.id)}
-                    title="Excluir agendamento"
-                    type="button"
-                  >
-                    Excluir
+        <div className="window-list">
+          {windows.map((window) => {
+            const items = dayItems.filter((item) => item.windowStart === window.start);
+            const activeItems = items.filter(isActiveWindowClient);
+            const onlineCount = activeItems.filter((item) => item.origin === 'online').length;
+            const walkInCount = activeItems.filter((item) => item.origin === 'presencial').length;
+            return (
+              <section className="queue-window" key={window.start}>
+                <header>
+                  <div><strong>{window.label}</strong><span className={`window-status ${window.isOpen ? 'open' : 'closed'}`}>{window.isOpen ? 'Aberta' : window.isLunch ? 'Almoco' : 'Fechada'}</span></div>
+                  <div className="window-type-counts"><span>{onlineCount} Online</span><span>{walkInCount} Presenciais</span></div>
+                  {window.isLunch && !window.isOpen && <span className="lunch-label">Fechada para almoco</span>}
+                  <button className="window-toggle" onClick={() => onSettingsChange(toggleWindowStatus(settings, selectedDate, selectedBarber, window.start, window.isLunch))} type="button">
+                    {window.isOpen ? 'Fechar janela' : 'Abrir janela'}
                   </button>
+                </header>
+                <div className="queue-items">
+                  {items.length ? items.map((item) => (
+                    <article className="timeline-card" key={item.id}>
+                      <div className="client-avatar"><span>{item.customerName?.[0] ?? '?'}</span></div>
+                      <div className="timeline-info"><h3>{item.customerName}</h3><p>{item.service}</p><small><span className={`origin-badge ${item.origin}`}>{originLabel(item.origin)}</span></small></div>
+                      <span className={`status ${item.status}`}>{statusLabel(item.status)}</span>
+                      <QueueActions item={item} onDelete={onDelete} onStatusChange={onStatusChange} />
+                    </article>
+                  )) : <p className="empty-window">Nenhum cliente nesta janela.</p>}
                 </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-agenda">
-              <h2>Nenhum horario reservado</h2>
-              <p>A agenda esta livre para novos atendimentos.</p>
-            </div>
-          )}
+              </section>
+            );
+          })}
         </div>
-
         <div className="admin-side">
-          <details className="admin-drawer">
-            <summary>Adicionar horario</summary>
-            <form className="manual-booking drawer-content" onSubmit={addManualAppointment}>
-
-              <label>
-                Cliente
-                <input
-                  value={manual.customerName}
-                  onChange={(event) => setManual((current) => ({ ...current, customerName: event.target.value }))}
-                  placeholder="Nome do cliente"
-                />
-              </label>
-
-              <label>
-                Servico
-                <select
-                  value={manual.serviceId}
-                  onChange={(event) => setManual((current) => ({ ...current, serviceId: event.target.value }))}
-                >
-                  {services.map((service) => (
-                    <option key={service.id} value={service.id}>{service.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Barbeiro
-                <select
-                  value={manual.barber}
-                  onChange={(event) => {
-                    setSelectedBarber(event.target.value);
-                    setManual((current) => ({ ...current, barber: event.target.value }));
-                  }}
-                >
-                  {BARBERS.map((barber) => (
-                    <option key={barber}>{barber}</option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="inline-fields">
-                <label>
-                  Duracao
-                  <input
-                    min="1"
-                    type="number"
-                    value={manual.durationMinutes}
-                    onChange={(event) => setManual((current) => ({ ...current, durationMinutes: event.target.value }))}
-                  />
-                </label>
-                <label>
-                  Margem
-                  <input
-                    min="0"
-                    type="number"
-                    value={manual.bufferMinutes}
-                    onChange={(event) => setManual((current) => ({ ...current, bufferMinutes: event.target.value }))}
-                  />
-                </label>
-              </div>
-
-              <label>
-                Horario
-                <select
-                  value={manual.time}
-                  onChange={(event) => setManual((current) => ({ ...current, time: event.target.value }))}
-                >
-                  {availableTimes.length ? (
-                    availableTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
-                  ) : (
-                    <option value="">Sem horarios</option>
-                  )}
-                </select>
-              </label>
-
-              <button className="secondary-button" disabled={!availableTimes.length} type="submit">
-                Adicionar manualmente
-              </button>
-
+          <details className="admin-drawer" open>
+            <summary>Adicionar cliente</summary>
+            <form className="manual-booking drawer-content" onSubmit={addManual}>
+              <label>Cliente<input value={manual.customerName} onChange={(event) => setManual({ ...manual, customerName: event.target.value })} placeholder="Nome do cliente" /></label>
+              <label>Servico<select value={manual.serviceId} onChange={(event) => setManual({ ...manual, serviceId: event.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+              <label>Barbeiro<select value={manual.barber} onChange={(event) => { setSelectedBarber(event.target.value); setManual({ ...manual, barber: event.target.value, windowStart: '' }); }}>{BARBERS.map((barber) => <option key={barber}>{barber}</option>)}</select></label>
+              <label>Janela<select value={manual.windowStart} onChange={(event) => setManual({ ...manual, windowStart: event.target.value })}>{availableWindows.length ? availableWindows.map((window) => <option key={window.start} value={window.start}>{window.label}</option>) : <option value="">Sem janelas abertas</option>}</select></label>
+              <label>Origem do atendimento<select value={manual.origin} onChange={(event) => setManual({ ...manual, origin: event.target.value })}><option value="presencial">Presencial</option><option value="online">Online</option></select></label>
+              <button className="secondary-button" disabled={!availableWindows.length} type="submit">Adicionar encaixe</button>
               {manualError && <p className="feedback error">{manualError}</p>}
             </form>
           </details>
-
           <details className="admin-drawer">
-            <summary>Bloquear horario</summary>
-            <form className="manual-booking drawer-content" onSubmit={addManualBlock}>
-
-              <label>
-                Motivo
-                <input
-                  value={block.reason}
-                  onChange={(event) => setBlock((current) => ({ ...current, reason: event.target.value }))}
-                  placeholder="Almoco, manutencao..."
-                />
-              </label>
-
+            <summary>Configuracao da barbearia</summary>
+            <section className="manual-booking drawer-content">
               <div className="inline-fields">
-                <label>
-                  Horario
-                  <select
-                    value={block.time}
-                    onChange={(event) => setBlock((current) => ({ ...current, time: event.target.value }))}
-                  >
-                    {availableBlockTimes.length ? (
-                      availableBlockTimes.map((availableTime) => <option key={availableTime}>{availableTime}</option>)
-                    ) : (
-                      <option value="">Sem horarios</option>
-                    )}
-                  </select>
-                </label>
-                <label>
-                  Minutos
-                  <input
-                    min="1"
-                    type="number"
-                    value={block.durationMinutes}
-                    onChange={(event) => setBlock((current) => ({ ...current, durationMinutes: event.target.value }))}
-                  />
-                </label>
+                <label>Abertura<input type="time" value={settings.openingTime} onChange={(event) => onSettingsChange({ openingTime: event.target.value })} /></label>
+                <label>Fechamento<input type="time" value={settings.closingTime} onChange={(event) => onSettingsChange({ closingTime: event.target.value })} /></label>
               </div>
-
-              <button className="secondary-button" disabled={!availableBlockTimes.length} type="submit">
-                Bloquear
-              </button>
-
-              {blockError && <p className="feedback error">{blockError}</p>}
-            </form>
+              <label>Tamanho da janela<select value={settings.windowMinutes} onChange={(event) => onSettingsChange({ windowMinutes: Number(event.target.value) })}><option value="30">30 minutos</option><option value="60">1 hora</option><option value="90">1h30</option><option value="120">2 horas</option></select></label>
+              <label className="toggle-field"><input type="checkbox" checked={!settings.lunchEnabled} onChange={(event) => onSettingsChange({ lunchEnabled: !event.target.checked })} />Sem horario de almoco</label>
+              {settings.lunchEnabled && <div className="inline-fields">
+                <label>Inicio do almoco<input type="time" value={settings.lunchStart} onChange={(event) => onSettingsChange({ lunchStart: event.target.value, reopenedLunchWindows: {} })} /></label>
+                <label>Fim do almoco<input type="time" value={settings.lunchEnd} onChange={(event) => onSettingsChange({ lunchEnd: event.target.value, reopenedLunchWindows: {} })} /></label>
+              </div>}
+              <p className="settings-note">O estado aberto ou fechado e controlado em cada janela da agenda.</p>
+            </section>
           </details>
-
           <details className="admin-drawer">
             <summary>Historico por cliente</summary>
             <section className="manual-booking drawer-content">
-              <input
-                value={historyQuery}
-                onChange={(event) => setHistoryQuery(event.target.value)}
-                placeholder="Buscar cliente"
-              />
-              <div className="history-list">
-                {historyItems.length ? (
-                  historyItems.map((item) => (
-                    <article key={item.id}>
-                      <strong>{item.customerName}</strong>
-                      <span>{formatDate(item.date)} - {item.time} - {item.service}</span>
-                      <small>{statusLabel(item.status)}</small>
-                    </article>
-                  ))
-                ) : (
-                  <p>Digite um nome para ver o historico.</p>
-                )}
-              </div>
+              <input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Buscar cliente" />
+              <div className="history-list">{historyItems.length ? historyItems.map((item) => <article key={item.id}><strong>{item.customerName}</strong><span>{formatDate(item.date)} · {formatWindow(item.windowStart, settings)} · {item.service}</span><small>{statusLabel(item.status)}</small></article>) : <p>Digite um nome para ver o historico.</p>}</div>
             </section>
           </details>
         </div>
       </div>
-
-      <details className="admin-drawer full-drawer">
-        <summary>Duracao e margem dos servicos</summary>
-        <ServiceSettings services={services} onServiceChange={onServiceChange} />
-      </details>
     </section>
   );
 }
 
-function ServiceSettings({ services, onServiceChange }) {
+function QueueActions({ item, onDelete, onStatusChange }) {
   return (
-    <section className="service-settings">
-      <div>
-        <span className="eyebrow">Servicos</span>
-        <h2>Duracao e margem</h2>
-      </div>
-      <div className="service-settings-grid">
-        {services.map((service) => (
-          <article key={service.id}>
-            <strong>{service.name}</strong>
-            <span>{service.price}</span>
-            <div className="inline-fields">
-              <label>
-                Duracao
-                <input
-                  min="1"
-                  type="number"
-                  value={service.durationMinutes}
-                  onChange={(event) => onServiceChange(service.id, { durationMinutes: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Margem
-                <input
-                  min="0"
-                  type="number"
-                  value={service.bufferMinutes}
-                  onChange={(event) => onServiceChange(service.id, { bufferMinutes: Number(event.target.value) })}
-                />
-              </label>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
+    <div className="timeline-actions">
+      {item.status === 'agendado' && <button onClick={() => onStatusChange(item.id, 'chegou')} type="button">Check-in</button>}
+      {item.status === 'chegou' && <button onClick={() => onStatusChange(item.id, 'aguardando')} type="button">Aguardando</button>}
+      {['chegou', 'aguardando'].includes(item.status) && <button onClick={() => onStatusChange(item.id, 'em_atendimento')} type="button">Iniciar</button>}
+      {item.status === 'em_atendimento' && <button onClick={() => onStatusChange(item.id, 'finalizado')} type="button">Finalizar</button>}
+      {['agendado', 'chegou', 'aguardando'].includes(item.status) && <button onClick={() => onStatusChange(item.id, 'ausente')} type="button">Ausente</button>}
+      {!['finalizado', 'cancelado'].includes(item.status) && <button onClick={() => onStatusChange(item.id, 'cancelado')} type="button">Cancelar</button>}
+      <button className="delete-button" onClick={() => onDelete(item.id)} type="button">Excluir</button>
+    </div>
   );
 }
 
-function getAvailableTimes(appointments, date, barber = BARBERS[0], durationMinutes = SLOT_STEP_MINUTES, options = {}) {
-  return getBusinessTimes(date).filter((time) => {
-    if (!options.includePast && isAppointmentInPast(date, time)) return false;
-    if (timeToMinutes(time) + Number(durationMinutes) > getBusinessCloseMinutes(date)) return false;
-    return !hasScheduleConflict(
-      appointments,
-      {
-        date,
-        time,
-        barber,
-        durationMinutes,
-        bufferMinutes: 0,
-      },
-      options.services ?? DEFAULT_SERVICES,
-    );
+function buildWindows(settings) {
+  const windows = [];
+  const opening = timeToMinutes(settings.openingTime);
+  const closing = timeToMinutes(settings.closingTime);
+  for (let minutes = opening; minutes + settings.windowMinutes <= closing; minutes += settings.windowMinutes) {
+    windows.push({ start: formatMinutes(minutes), label: `${formatMinutes(minutes)}–${formatMinutes(minutes + settings.windowMinutes)}` });
+  }
+  return windows;
+}
+
+function getWindowAvailability(appointments, date, barber, settings, includePast) {
+  return buildWindows(settings).map((window) => {
+    const passed = !includePast && isWindowInPast(date, window.start, settings);
+    const key = windowKey(date, barber, window.start);
+    const isLunch = isLunchWindow(window.start, settings);
+    const manuallyReopened = Boolean(settings.reopenedLunchWindows?.[key]);
+    const closed = Boolean(settings.closedWindows?.[key]) || (isLunch && !manuallyReopened);
+    return { ...window, passed, isLunch, isOpen: !passed && !closed };
   });
 }
 
-function validateScheduleItem(item, appointments, services) {
-  const businessTimes = getBusinessTimes(item.date);
-  if (!businessTimes.length || !businessTimes.includes(item.time)) {
-    return { ok: false, message: 'A barbearia nao atende nesse dia ou horario.' };
-  }
-
-  const start = timeToMinutes(item.time);
-  const end = start + getAppointmentBlockMinutes(item, services);
-  const businessEnd = getBusinessCloseMinutes(item.date);
-
-  if (end > businessEnd) {
-    return { ok: false, message: 'Esse horario nao comporta a duracao do atendimento.' };
-  }
-
-  if (hasScheduleConflict(appointments, item, services)) {
-    return { ok: false, message: 'Esse horario conflita com outro item da agenda.' };
-  }
-
+function validateWindowReservation(item, appointments, settings) {
+  if (!buildWindows(settings).some((window) => window.start === item.windowStart)) return { ok: false, message: 'Janela de atendimento invalida.' };
+  const key = windowKey(item.date, item.barber, item.windowStart);
+  const closedForLunch = isLunchWindow(item.windowStart, settings) && !settings.reopenedLunchWindows?.[key];
+  if (settings.closedWindows?.[key] || closedForLunch) return { ok: false, message: 'Essa janela esta fechada. Escolha uma janela aberta.' };
   return { ok: true };
 }
 
-function hasScheduleConflict(appointments, candidate, services) {
-  const candidateStart = timeToMinutes(candidate.time);
-  const candidateEnd = candidateStart + getAppointmentBlockMinutes(candidate, services);
-
-  return appointments.some((appointment) => {
-    if (appointment.date !== candidate.date) return false;
-    if ((appointment.barber ?? BARBERS[0]) !== candidate.barber) return false;
-    if (appointment.status === 'cancelado') return false;
-    if (candidate.id && appointment.id === candidate.id) return false;
-
-    const appointmentStart = timeToMinutes(appointment.time);
-    const appointmentEnd = appointmentStart + getAppointmentBlockMinutes(appointment, services);
-    return candidateStart < appointmentEnd && candidateEnd > appointmentStart;
-  });
+function getSuggestedWindow(windows, date, settings) {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return windows.find((window) => window.isOpen && (date !== today || timeToMinutes(window.start) + settings.windowMinutes > currentMinutes))
+    ?? windows.find((window) => window.isOpen);
 }
 
-function normalizeScheduleItem(payload, services) {
-  const service = services.find((item) => item.id === payload.serviceId || item.name === payload.service);
-  const durationMinutes = Number(payload.durationMinutes ?? service?.durationMinutes ?? SLOT_STEP_MINUTES);
-  const bufferMinutes = Number(payload.bufferMinutes ?? service?.bufferMinutes ?? 0);
+function isActiveWindowClient(item) {
+  return !['cancelado', 'ausente'].includes(item.status);
+}
+
+function getClientWindowInfo(appointments, date, barber, windowStart, settings, appointmentId = '') {
+  const items = appointments
+    .filter((item) => item.date === date && item.barber === barber && item.windowStart === windowStart)
+    .filter(isActiveWindowClient);
+  const queue = items.filter((item) => ['chegou', 'aguardando', 'em_atendimento'].includes(item.status)).sort(queueSort);
+  const queueIndex = appointmentId ? queue.findIndex((item) => item.id === appointmentId) : -1;
 
   return {
-    type: payload.type ?? 'appointment',
-    customerName: payload.customerName,
-    serviceId: payload.serviceId ?? service?.id ?? 'custom',
-    service: payload.service ?? service?.name ?? 'Atendimento',
-    barber: payload.barber ?? BARBERS[0],
-    date: payload.date,
-    time: payload.time,
-    durationMinutes,
-    bufferMinutes,
+    position: queueIndex >= 0 ? queueIndex + 1 : 0,
+    ahead: queueIndex >= 0 ? queueIndex : 0,
   };
 }
 
-function getServiceBlockMinutes(service) {
-  return Number(service?.durationMinutes ?? SLOT_STEP_MINUTES) + Number(service?.bufferMinutes ?? 0);
+function getClientAvailability(windows, date, settings) {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const current = date === today
+    ? windows.find((window) => window.isOpen && timeToMinutes(window.start) <= currentMinutes && timeToMinutes(window.start) + settings.windowMinutes > currentMinutes)
+    : null;
+  const next = windows.find((window) => window.isOpen && (!current || window.start !== current.start) && (date !== today || timeToMinutes(window.start) > currentMinutes));
+  return { current, next };
 }
 
-function getAppointmentBlockMinutes(appointment, services) {
-  if (appointment.type === 'block') return Number(appointment.durationMinutes ?? SLOT_STEP_MINUTES);
-  if (appointment.durationMinutes != null) {
-    return Number(appointment.durationMinutes) + Number(appointment.bufferMinutes ?? 0);
+function windowKey(date, barber, start) {
+  return `${date}|${barber}|${start}`;
+}
+
+function toggleWindowStatus(settings, date, barber, start, isLunch) {
+  const key = windowKey(date, barber, start);
+  const closedWindows = { ...settings.closedWindows };
+  const reopenedLunchWindows = { ...settings.reopenedLunchWindows };
+  const currentlyOpen = !closedWindows[key] && (!isLunch || reopenedLunchWindows[key]);
+
+  if (currentlyOpen) {
+    closedWindows[key] = true;
+    delete reopenedLunchWindows[key];
+  } else {
+    delete closedWindows[key];
+    if (isLunch) reopenedLunchWindows[key] = true;
   }
 
-  const service = services.find((item) => item.id === appointment.serviceId || item.name === appointment.service);
-  return getServiceBlockMinutes(service);
+  return { closedWindows, reopenedLunchWindows };
 }
 
-function useNowMinute() {
-  const [now, setNow] = useState(() => new Date());
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setNow(new Date());
-    }, 60000);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  return now;
+function isLunchWindow(start, settings) {
+  if (!settings.lunchEnabled || !settings.lunchStart || !settings.lunchEnd) return false;
+  const windowStart = timeToMinutes(start);
+  const windowEnd = windowStart + settings.windowMinutes;
+  const lunchStart = timeToMinutes(settings.lunchStart);
+  const lunchEnd = timeToMinutes(settings.lunchEnd);
+  return windowStart < lunchEnd && windowEnd > lunchStart;
 }
 
-function getTimeUntilAppointment(date, time, now = new Date()) {
-  if (!date || !time) return '';
-
-  const appointmentDate = new Date(`${date}T${time}:00`);
-  const differenceInMinutes = Math.floor((appointmentDate.getTime() - now.getTime()) / 60000);
-
-  if (differenceInMinutes < 0) return 'Esse horario ja passou.';
-  if (differenceInMinutes === 0) return 'Seu horario e agora.';
-
-  const days = Math.floor(differenceInMinutes / 1440);
-  const hours = Math.floor((differenceInMinutes % 1440) / 60);
-  const minutes = differenceInMinutes % 60;
-
-  if (days > 0) {
-    const dayText = days === 1 ? 'Falta 1 dia' : `Faltam ${days} dias`;
-    const hourText = hours > 0 ? ` e ${hours}h` : '';
-    return `${dayText}${hourText} para o seu horario.`;
-  }
-
-  if (hours > 0) {
-    const minuteText = minutes > 0 ? ` ${minutes}min` : '';
-    return `Faltam ${hours}h${minuteText} para o seu horario.`;
-  }
-
-  return `Faltam ${minutes}min para o seu horario.`;
+function queueSort(a, b) {
+  const windowOrder = (a.windowStart ?? '').localeCompare(b.windowStart ?? '');
+  if (windowOrder) return windowOrder;
+  const aQueue = a.checkedInAt ?? a.createdAt ?? '';
+  const bQueue = b.checkedInAt ?? b.createdAt ?? '';
+  return aQueue.localeCompare(bQueue);
 }
 
-function isAppointmentInPast(date, time, now = new Date()) {
-  if (!date || !time) return false;
-  return new Date(`${date}T${time}:00`).getTime() < now.getTime();
+function isWindowInPast(date, start, settings) {
+  const end = timeToMinutes(start) + settings.windowMinutes;
+  const now = new Date();
+  return date < today || (date === today && end <= now.getHours() * 60 + now.getMinutes());
 }
 
-function getBusinessTimes(date) {
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-
-  if (weekday === 0) return [];
-  if (weekday === 6) return buildTimes(7, 0, 18, 0);
-  return buildTimes(7, 30, 19, 0);
+function formatWindow(start, settings) {
+  return `${start} as ${formatMinutes(timeToMinutes(start) + settings.windowMinutes)}`;
 }
 
-function getBusinessCloseMinutes(date) {
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 6) return 18 * 60;
-  return 19 * 60;
+function statusLabel(status) {
+  return {
+    agendado: 'Agendado',
+    chegou: 'Chegou',
+    aguardando: 'Aguardando',
+    em_atendimento: 'Em atendimento',
+    finalizado: 'Finalizado',
+    ausente: 'Ausente',
+    cancelado: 'Cancelado',
+  }[status] ?? status;
 }
 
-function buildTimes(startHour, startMinute, endHour, endMinute) {
-  const times = [];
-  const opening = startHour * 60 + startMinute;
-  const closing = endHour * 60 + endMinute;
-
-  for (let minutes = opening; minutes + SLOT_STEP_MINUTES <= closing; minutes += SLOT_STEP_MINUTES) {
-    times.push(formatMinutes(minutes));
-  }
-
-  return times;
-}
-
-function getBusinessLabel(date) {
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 0) return 'Domingo fechado.';
-  if (weekday === 6) return 'Sabado, 07:00 as 18:00.';
-  return 'Segunda a sexta, 07:30 as 19:00.';
+function originLabel(origin) {
+  return origin === 'presencial' ? 'Presencial' : 'Online';
 }
 
 function formatDate(date) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(`${date}T12:00:00`));
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${date}T12:00:00`));
 }
 
 function toDateInputValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function formatMinutes(totalMinutes) {
-  const hour = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
 }
 
 function timeToMinutes(time) {
@@ -1117,25 +640,8 @@ function timeToMinutes(time) {
   return hour * 60 + minute;
 }
 
-function minutesToTime(totalMinutes) {
-  return formatMinutes(totalMinutes);
-}
-
-function statusLabel(status) {
-  const labels = {
-    agendado: 'Agendado',
-    bloqueado: 'Bloqueado',
-    concluido: 'Concluido',
-    cancelado: 'Cancelado',
-  };
-
-  return labels[status] ?? status;
-}
-
 createRoot(document.getElementById('root')).render(<App />);
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
