@@ -1221,22 +1221,6 @@ body {
   width: min(820px, calc(100% - 32px));
 }
 
-.client-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 54px;
-  margin-bottom: 12px;
-  padding: 0 4px;
-}
-
-.client-topbar img {
-  display: block;
-  width: 160px;
-  height: auto;
-  object-fit: contain;
-}
-
 .booking-app,
 .agenda-screen {
   gap: 12px;
@@ -1321,16 +1305,6 @@ select,
   .client-shell {
     width: 100%;
     padding: 10px 10px calc(24px + env(safe-area-inset-bottom));
-  }
-
-  .client-topbar {
-    min-height: 48px;
-    margin-bottom: 8px;
-    padding: 0 4px;
-  }
-
-  .client-topbar img {
-    width: 138px;
   }
 
   .booking-header,

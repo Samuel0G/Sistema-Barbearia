@@ -174,7 +174,6 @@ function App() {
 
   return (
     <main className="app-shell client-shell">
-      <header className="client-topbar"><img src="/assets/logo-samuka.png" alt="Samuka Barbearia" /></header>
       <BookingPage appointments={appointments} onCreate={createAppointment} services={services} settings={settings} />
     </main>
   );
