@@ -2,11 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const APPOINTMENTS_KEY = 'barber_agenda_appointments';
-const SERVICES_KEY = 'barber_agenda_services';
-const SETTINGS_KEY = 'barber_agenda_window_settings';
-const SERVICES_VERSION_KEY = 'barber_agenda_services_version';
-const CURRENT_SERVICES_VERSION = '2';
 const DEFAULT_SETTINGS = { openingTime: '07:00', closingTime: '19:00', windowMinutes: 60, lunchEnabled: false, lunchStart: '12:00', lunchEnd: '13:00', closedWindows: {}, reopenedLunchWindows: {} };
 const BARBERS = ['Barbeiro A', 'Barbeiro B'];
 const today = toDateInputValue(new Date());
@@ -19,58 +14,28 @@ const DEFAULT_SERVICES = [
   { id: 'sobrancelha', name: 'Sobrancelha', price: 'R$ 15', durationMinutes: 20, bufferMinutes: 10 },
 ];
 
-function loadJson(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
+const REFRESH_INTERVAL_MS = 20000;
+
+async function apiRequest(url, options) {
+  const response = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `Erro ${response.status}`);
   }
-}
-
-function loadSettings() {
-  const stored = loadJson(SETTINGS_KEY, {});
-  return {
-    openingTime: stored.openingTime ?? (stored.openingHour != null ? formatMinutes(stored.openingHour * 60) : DEFAULT_SETTINGS.openingTime),
-    closingTime: stored.closingTime ?? (stored.closingHour != null ? formatMinutes(stored.closingHour * 60) : DEFAULT_SETTINGS.closingTime),
-    windowMinutes: Number(stored.windowMinutes ?? DEFAULT_SETTINGS.windowMinutes),
-    lunchEnabled: Boolean(stored.lunchEnabled),
-    lunchStart: stored.lunchStart ?? DEFAULT_SETTINGS.lunchStart,
-    lunchEnd: stored.lunchEnd ?? DEFAULT_SETTINGS.lunchEnd,
-    closedWindows: stored.closedWindows ?? {},
-    reopenedLunchWindows: stored.reopenedLunchWindows ?? {},
-  };
-}
-
-function loadAppointments() {
-  return loadJson(APPOINTMENTS_KEY, []).map((item) => ({
-    ...item,
-    windowStart: item.windowStart ?? item.time,
-    time: item.windowStart ?? item.time,
-    type: item.type === 'appointment' ? 'agendado' : item.type,
-    origin: item.origin ?? (item.type === 'presencial' ? 'presencial' : 'online'),
-    status: item.status === 'concluido' ? 'finalizado' : item.status,
-  }));
-}
-
-function loadServices() {
-  const stored = loadJson(SERVICES_KEY, []);
-  if (!Array.isArray(stored) || !stored.length) return DEFAULT_SERVICES;
-  const version = localStorage.getItem(SERVICES_VERSION_KEY);
-  const merged = DEFAULT_SERVICES.map((service) => ({ ...service, ...stored.find((item) => item.id === service.id) }));
-  const migrated = merged.map((service) =>
-    version !== CURRENT_SERVICES_VERSION && service.id === 'barba' && service.durationMinutes === 40
-      ? { ...service, durationMinutes: 20 }
-      : service,
-  );
-  return migrated;
+  return response.json();
 }
 
 function App() {
   const [path, setPath] = useState(() => window.location.pathname);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => localStorage.getItem('barber_admin_session') === 'active');
-  const [appointments, setAppointments] = useState(loadAppointments);
-  const [services, setServices] = useState(loadServices);
-  const [settings, setSettings] = useState(loadSettings);
+  const [appointments, setAppointments] = useState([]);
+  const [services, setServices] = useState(DEFAULT_SERVICES);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (window.location.pathname === '/') {
@@ -82,28 +47,31 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  useEffect(() => localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments)), [appointments]);
-  useEffect(() => {
-    localStorage.setItem(SERVICES_KEY, JSON.stringify(services));
-    localStorage.setItem(SERVICES_VERSION_KEY, CURRENT_SERVICES_VERSION);
-  }, [services]);
-  useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
+  const fetchState = async () => {
+    try {
+      const data = await apiRequest('/api/state');
+      setAppointments(data.appointments);
+      setServices(data.services);
+      setSettings(data.settings);
+      setLoadError('');
+    } catch (error) {
+      setLoadError('Nao foi possivel conectar ao banco de dados.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const reload = () => {
-      setAppointments(loadAppointments());
-      setServices(loadServices());
-      setSettings(loadSettings());
-    };
-    window.addEventListener('focus', reload);
-    window.addEventListener('storage', reload);
+    fetchState();
+    const interval = setInterval(fetchState, REFRESH_INTERVAL_MS);
+    window.addEventListener('focus', fetchState);
     return () => {
-      window.removeEventListener('focus', reload);
-      window.removeEventListener('storage', reload);
+      clearInterval(interval);
+      window.removeEventListener('focus', fetchState);
     };
   }, []);
 
-  const createAppointment = (payload) => {
+  const createAppointment = async (payload) => {
     const normalized = {
       ...payload,
       windowStart: payload.windowStart ?? payload.time,
@@ -115,28 +83,43 @@ function App() {
     const validation = validateWindowReservation(normalized, appointments, settings);
     if (!validation.ok) return validation;
 
-    const appointment = {
-      id: crypto.randomUUID(),
-      status: 'agendado',
-      createdAt: new Date().toISOString(),
-      ...normalized,
-    };
-    setAppointments((current) => [...current, appointment]);
-    return { ok: true, appointment };
+    try {
+      const result = await apiRequest('/api/appointments', { method: 'POST', body: JSON.stringify(normalized) });
+      if (result.ok) setAppointments((current) => [...current, result.appointment]);
+      return result;
+    } catch (error) {
+      return { ok: false, message: 'Nao foi possivel salvar o agendamento. Tente novamente.' };
+    }
   };
 
-  const updateStatus = (id, status) => {
-    setAppointments((current) =>
-      current.map((item) => item.id === id
-          ? {
-            ...item,
-            status,
-            ...(status === 'chegou' ? { checkedInAt: new Date().toISOString() } : {}),
-            ...(status === 'em_atendimento' ? { startedAt: new Date().toISOString() } : {}),
-            ...(status === 'finalizado' ? { finishedAt: new Date().toISOString() } : {}),
-          }
-        : item),
-    );
+  const updateStatus = async (id, status) => {
+    try {
+      const result = await apiRequest('/api/appointments', { method: 'PATCH', body: JSON.stringify({ id, status }) });
+      if (result.ok && result.appointment) {
+        setAppointments((current) => current.map((item) => (item.id === id ? result.appointment : item)));
+      }
+    } catch (error) {
+      setLoadError('Nao foi possivel atualizar o status. Tente novamente.');
+    }
+  };
+
+  const deleteAppointment = async (id) => {
+    try {
+      await apiRequest(`/api/appointments?id=${id}`, { method: 'DELETE' });
+      setAppointments((current) => current.filter((item) => item.id !== id));
+    } catch (error) {
+      setLoadError('Nao foi possivel excluir. Tente novamente.');
+    }
+  };
+
+  const changeSettings = async (patch) => {
+    setSettings((current) => ({ ...current, ...patch }));
+    try {
+      const result = await apiRequest('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
+      if (result.ok) setSettings(result.settings);
+    } catch (error) {
+      setLoadError('Nao foi possivel salvar a configuracao. Tente novamente.');
+    }
   };
 
   const loginAdmin = (username, password) => {
@@ -146,11 +129,20 @@ function App() {
     return true;
   };
 
+  if (loading) {
+    return (
+      <main className="app-shell">
+        <p style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</p>
+      </main>
+    );
+  }
+
   if (path === '/admin') {
     return (
       <main className="app-shell">
         {isAdminLoggedIn && (
           <header className="topbar">
+            {loadError && <span className="feedback error">{loadError}</span>}
             <button className="logout-button" onClick={() => {
               localStorage.removeItem('barber_admin_session');
               setIsAdminLoggedIn(false);
@@ -161,8 +153,8 @@ function App() {
           <BarberDashboard
             appointments={appointments}
             onCreate={createAppointment}
-            onDelete={(id) => setAppointments((current) => current.filter((item) => item.id !== id))}
-            onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+            onDelete={deleteAppointment}
+            onSettingsChange={changeSettings}
             onStatusChange={updateStatus}
             services={services}
             settings={settings}
@@ -174,6 +166,7 @@ function App() {
 
   return (
     <main className="app-shell client-shell">
+      {loadError && <p className="feedback error">{loadError}</p>}
       <BookingPage appointments={appointments} onCreate={createAppointment} services={services} settings={settings} />
     </main>
   );
@@ -228,13 +221,13 @@ function BookingPage({ appointments, onCreate, services, settings }) {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
     if (!form.customerName.trim() || !form.windowStart) {
       setError('Informe seu nome e escolha uma janela.');
       return;
     }
-    const result = onCreate({
+    const result = await onCreate({
       ...form,
       customerName: form.customerName.trim(),
       service: selectedService.name,
@@ -372,7 +365,7 @@ function BarberDashboard({ appointments, onCreate, onDelete, onSettingsChange, o
     setManual((current) => ({ ...current, barber: selectedBarber }));
   }, [selectedBarber]);
 
-  const addManual = (event) => {
+  const addManual = async (event) => {
     event.preventDefault();
     setManualError('');
     const service = services.find((item) => item.id === manual.serviceId) ?? services[0];
@@ -380,7 +373,7 @@ function BarberDashboard({ appointments, onCreate, onDelete, onSettingsChange, o
       setManualError(nextAvailable ? `Escolha uma janela. Proxima sugestao: ${nextAvailable.label}.` : 'Nao ha janelas abertas.');
       return;
     }
-    const result = onCreate({
+    const result = await onCreate({
       ...manual,
       customerName: manual.customerName.trim(),
       date: selectedDate,
