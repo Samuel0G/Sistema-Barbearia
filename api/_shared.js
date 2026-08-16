@@ -51,6 +51,15 @@ export function windowKey(date, barber, start) {
   return `${date}|${barber}|${start}`;
 }
 
+// O banco pode devolver a coluna DATE como objeto Date ou como string
+// "AAAA-MM-DDT00:00:00.000Z". O app compara datas como texto simples
+// "AAAA-MM-DD", entao normalizamos aqui para nao quebrar a comparacao.
+function normalizeDate(value) {
+  if (!value) return value;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 export function mapAppointmentRow(row) {
   return {
     id: row.id,
@@ -58,7 +67,7 @@ export function mapAppointmentRow(row) {
     service: row.service,
     serviceId: row.service_id,
     barber: row.barber,
-    date: row.date,
+    date: normalizeDate(row.date),
     windowStart: row.window_start,
     time: row.window_start,
     type: row.type,
